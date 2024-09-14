@@ -1,0 +1,28 @@
+## @file
+# Azure Pipeline build file for testing the repository
+#
+# Copyright (c) Microsoft Corporation.
+# SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+trigger: none
+pr: none
+
+resources:
+  repositories:
+    - repository: mu_devops
+      type: github
+      endpoint: microsoft
+      name: microsoft/mu_devops
+      ref: main
+
+jobs:
+- template: template-prgate.yml
+  parameters:
+    build_matrix:
+      WINDOWS_BUILD:
+        vmImage: 'windows-latest'
+      # Temporarily disable Linux build. Issues with using mu_devops container
+      # and secondary issue with using python on the ubuntu:22.04 provided image.
+      # LINUX_BUILD:
+      #   vmImage: 'ubuntu-latest'
+      #   containerImage: ubuntu:22.04
