@@ -1,0 +1,2 @@
+- Fix cpuid and cpuidex
+- Fix pcd functions

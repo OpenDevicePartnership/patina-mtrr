@@ -1,1817 +1,2753 @@
-use core::arch::x86_64::CpuidResult;
-use core::arch::x86_64::__cpuid;
+use core::mem::size_of;
+use core::ptr::write_bytes;
 
-use alloc::vec::Vec;
-use bitfield_struct::bitfield;
-use core::fmt;
-use core::fmt::{Display, Formatter};
+use crate::edk_error::RETURN_ALREADY_STARTED;
+use crate::edk_error::RETURN_BUFFER_TOO_SMALL;
+use crate::edk_error::return_error;
+use crate::edk_error::RETURN_INVALID_PARAMETER;
+use crate::edk_error::RETURN_OUT_OF_RESOURCES;
+use crate::edk_error::RETURN_SUCCESS;
+use crate::edk_error::RETURN_UNSUPPORTED;
+use crate::edk_error::ReturnStatus;
+use crate::reg::asm_cpuid_ex;
+use crate::reg::asm_cpuid;
+use crate::reg::asm_disable_cache;
+use crate::reg::asm_enable_cache;
+use crate::reg::asm_msr_and_then_or_64;
+use crate::reg::asm_read_cr4;
+use crate::reg::asm_read_msr64;
+use crate::reg::asm_write_cr4;
+use crate::reg::asm_write_msr64;
+use crate::reg::cpu_flush_tlb;
+use crate::reg::save_and_disable_interrupts;
+use crate::reg::set_interrupt_state;
+use crate::structs::BIT11;
+use crate::structs::BIT7;
+use crate::structs::CLEAR_SEED;
+use crate::structs::CPUID_EXTENDED_FUNCTION;
+use crate::structs::CPUID_SIGNATURE;
+use crate::structs::CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS;
+use crate::structs::CPUID_VERSION_INFO;
+use crate::structs::CPUID_VIR_PHY_ADDRESS_SIZE;
+use crate::structs::CpuidStructuredExtendedFeatureFlagsEcx;
+use crate::structs::CpuidVirPhyAddressSizeEax;
+use crate::structs::MMTRR_LIB_FIXED_MTRR_TABLE;
+use crate::structs::MMTRR_MEMORY_CACHE_TYPE_SHORT_NAME;
+use crate::structs::MSR_IA32_MTRR_DEF_TYPE;
+use crate::structs::MSR_IA32_MTRR_PHYSBASE0;
+use crate::structs::MSR_IA32_MTRR_PHYSMASK0;
+use crate::structs::MSR_IA32_MTRRCAP;
+use crate::structs::MSR_IA32_TME_ACTIVATE;
+use crate::structs::MsrIa32MtrrDefType;
+use crate::structs::MsrIa32TmeActivateRegister;
+use crate::structs::MTRR_NUMBER_OF_FIXED_MTRR;
+use crate::structs::MTRR_NUMBER_OF_LOCAL_MTRR_RANGES;
+use crate::structs::MTRR_NUMBER_OF_VARIABLE_MTRR;
+use crate::structs::MTRR_NUMBER_OF_WORKING_MTRR_RANGES;
+use crate::structs::MtrrContext;
+use crate::structs::MtrrFixedSettings;
+use crate::structs::MtrrLibAddress;
+use crate::structs::MtrrMemoryCacheType;
+use crate::structs::MtrrMemoryRange;
+use crate::structs::MtrrSettings;
+use crate::structs::MtrrVariableSetting;
+use crate::structs::MtrrVariableSettings;
+use crate::structs::OR_SEED;
+use crate::structs::SCRATCH_BUFFER_SIZE;
+use crate::structs::SIZE_1MB;
+use crate::structs::VariableMtrr;
+use crate::utils::get_power_of_two_64;
+use crate::utils::high_bit_set_64;
+use crate::utils::is_pow2;
+use crate::utils::lshift_u64;
+use crate::utils::mult_u64x32;
+use crate::utils::rshift_u64;
 
-use crate::error::MtrrError;
-use crate::error::MtrrResult;
-use crate::reg::{read_msr, write_msr};
-
-// Cache attributes
-
-//
-// For X64:
-// .-----------------.------.-----.-----.-----.-----.
-// |                 | UC   | WC  | WP  | WT  | WB  |
-// + --------------- + ---  + --- + --- + --- + --- +
-// | Read  Cacheable | no   | no  | yes | yes | yes |
-// | Write Cacheable | no   | no* | no  | yes | yes |
-// '-----------------'------'-----'-----'-----'-----'
-//
-// Cache attributes(sorted from not so cache friendly to cache friendly)
-pub const EFI_MEMORY_UC: u64 = 0x00000000_00000001u64;
-pub const EFI_MEMORY_WC: u64 = 0x00000000_00000002u64;
-pub const EFI_MEMORY_WP: u64 = 0x00000000_00001000u64;
-pub const EFI_MEMORY_WT: u64 = 0x00000000_00000004u64;
-pub const EFI_MEMORY_WB: u64 = 0x00000000_00000008u64;
-pub const EFI_MEMORY_UCE: u64 = 0x00000000_00000010u64;
-
-// Variable MTRR msr
-const MSR_IA32_MTRR_PHYSBASE0: u32 = 0x00000200;
-// const MSR_IA32_MTRR_PHYSBASE1: u32 = 0x00000202;
-// const MSR_IA32_MTRR_PHYSBASE2: u32 = 0x00000204;
-// const MSR_IA32_MTRR_PHYSBASE3: u32 = 0x00000206;
-// const MSR_IA32_MTRR_PHYSBASE4: u32 = 0x00000208;
-// const MSR_IA32_MTRR_PHYSBASE5: u32 = 0x0000020A;
-// const MSR_IA32_MTRR_PHYSBASE6: u32 = 0x0000020C;
-// const MSR_IA32_MTRR_PHYSBASE7: u32 = 0x0000020E;
-// const MSR_IA32_MTRR_PHYSBASE8: u32 = 0x00000210;
-// const MSR_IA32_MTRR_PHYSBASE9: u32 = 0x00000212;
-
-const MSR_IA32_MTRR_PHYSMASK0: u32 = 0x00000201;
-// const MSR_IA32_MTRR_PHYSMASK1: u32 = 0x00000203;
-// const MSR_IA32_MTRR_PHYSMASK2: u32 = 0x00000205;
-// const MSR_IA32_MTRR_PHYSMASK3: u32 = 0x00000207;
-// const MSR_IA32_MTRR_PHYSMASK4: u32 = 0x00000209;
-// const MSR_IA32_MTRR_PHYSMASK5: u32 = 0x0000020B;
-// const MSR_IA32_MTRR_PHYSMASK6: u32 = 0x0000020D;
-// const MSR_IA32_MTRR_PHYSMASK7: u32 = 0x0000020F;
-// const MSR_IA32_MTRR_PHYSMASK8: u32 = 0x00000211;
-// const MSR_IA32_MTRR_PHYSMASK9: u32 = 0x00000213;
-
-// Fixed MTRR msr
-const MSR_IA32_MTRR_FIX64K_00000: u32 = 0x00000250;
-const MSR_IA32_MTRR_FIX16K_80000: u32 = 0x00000258;
-const MSR_IA32_MTRR_FIX16K_A0000: u32 = 0x00000259;
-const MSR_IA32_MTRR_FIX4K_C0000: u32 = 0x00000268;
-const MSR_IA32_MTRR_FIX4K_C8000: u32 = 0x00000269;
-const MSR_IA32_MTRR_FIX4K_D0000: u32 = 0x0000026A;
-const MSR_IA32_MTRR_FIX4K_D8000: u32 = 0x0000026B;
-const MSR_IA32_MTRR_FIX4K_E0000: u32 = 0x0000026C;
-const MSR_IA32_MTRR_FIX4K_E8000: u32 = 0x0000026D;
-const MSR_IA32_MTRR_FIX4K_F0000: u32 = 0x0000026E;
-const MSR_IA32_MTRR_FIX4K_F8000: u32 = 0x0000026F;
-
-const MSR_IA32_MTRR_DEF_TYPE: u32 = 0x000002FF;
-
-const MSR_IA32_MTRRCAP: u32 = 0x000000FE;
-
-#[bitfield(u64)]
-pub struct MtrrPhyBase {
-    #[bits(8)]
-    pub mem_type: u8,
-    #[bits(4)]
-    pub reserved1: u8,
-    #[bits(40)]
-    pub base_address: u64,
-    #[bits(12)]
-    pub reserved2: u16,
+fn M(start: u16, index: u16, vertex_count: u16) -> usize {
+    (start as usize) * vertex_count as usize + (index as usize)
 }
 
-#[bitfield(u64)]
-pub struct MtrrPhyMask {
-    #[bits(11)]
-    pub reserved1: u16,
-    #[bits(1)]
-    pub valid: u8,
-    #[bits(40)]
-    pub mask: u64,
-    #[bits(12)]
-    pub reserved2: u16,
+fn O(start: u16, index: u16, vertex_count: u16) -> usize {
+    (index as usize) * vertex_count as usize + (start as usize)
 }
 
-// pub const MTRR_MEMORY_TYPE_UNCACHEABLE: u8 = 0x0;
-// pub const MTRR_MEMORY_TYPE_WRITE_COMBINING: u8 = 0x1;
-// pub const MTRR_MEMORY_TYPE_WRITE_THROUGH: u8 = 0x4;
-// pub const MTRR_MEMORY_TYPE_WRITE_PROTECT: u8 = 0x5;
-// pub const MTRR_MEMORY_TYPE_WRITE_BACK: u8 = 0x6;
-#[derive(PartialEq, Clone, Copy, Debug)]
-enum MtrrMemoryType {
-    Uncacheable = 0x0,
-    WriteCombining = 0x1,
-    WriteThrough = 0x4,
-    WriteProtect = 0x5,
-    WriteBack = 0x6,
-}
+/*
+  Worker function prints all MTRRs for debugging.
 
-impl From<u64> for MtrrMemoryType {
-    fn from(value: u64) -> MtrrMemoryType {
-        match value {
-            0 => MtrrMemoryType::Uncacheable,
-            1 => MtrrMemoryType::WriteCombining,
-            4 => MtrrMemoryType::WriteThrough,
-            5 => MtrrMemoryType::WriteProtect,
-            6 => MtrrMemoryType::WriteBack,
-            _ => panic!("Invalid value for MtrrMemoryType: {}", value),
-        }
-    }
-}
+  If MtrrSetting is not NULL, print MTRR settings from input MTRR
+  settings buffer.
+  If MtrrSetting is NULL, print MTRR settings from MTRRs.
 
-impl From<u8> for MtrrMemoryType {
-    fn from(value: u8) -> MtrrMemoryType {
-        (value as u64).into()
-    }
-}
+  @param  MtrrSetting    A buffer holding all MTRRs content.
+*/
+// VOID
+// MtrrDebugPrintAllMtrrsWorker (
+//   IN MTRR_SETTINGS  *MtrrSetting
+//   );
 
-const SIZE_1MB: u32 = 0x000100000;
-const SIZE_64KB: u32 = 0x00010000;
-const SIZE_16KB: u32 = 0x00004000;
-const SIZE_4KB: u32 = 0x00001000;
+/**
+  Return whether MTRR is supported.
 
-struct MtrrFixedRange {
-    mtrr_msr: u32,
-    base: u32,
-    size: u32,
-    mtrr_msr_value: u64,
-    needs_update: bool,
-}
+  @param[out]  FixedMtrrSupported   Return whether fixed MTRR is supported.
+  @param[out]  VariableMtrrRangesCount    Return the max number of variable MTRRs.
 
-impl MtrrFixedRange {
-    pub const fn new(mtrr_msr: u32, base: u32, size: u32) -> Self {
-        Self { mtrr_msr, base, size, mtrr_msr_value: 0, needs_update: false }
-    }
-}
+  @retval TRUE  MTRR is supported when either fixed MTRR is supported or max number
+                of variable MTRRs is not 0.
+  @retval FALSE MTRR is not supported when both fixed MTRR is not supported and max
+                number of variable MTRRs is 0.
+**/
+pub fn mtrr_lib_is_mtrr_supported(
+    fixed_mtrr_supported: Option<&mut bool>,
+    variable_mtrr_ranges_count: Option<&mut u32>,
+) -> bool {
+    let edx: u32;
 
-struct MtrrRange {
-    base_address: u64,
-    length: u64,
-    mem_type: MtrrMemoryType,
-}
+    // Check CPUID(1).EDX[12] for MTRR capability
+    edx = asm_cpuid(CPUID_VERSION_INFO).edx;
 
-impl MtrrRange {
-    pub fn new(base_address: u64, length: u64, mem_type: MtrrMemoryType) -> Self {
-        Self { base_address, length, mem_type }
-    }
-}
+    let mtrr_supported = (edx & (1 << 12)) != 0;
 
-impl Display for MtrrRange {
-    fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
-        write!(
-            fmt,
-            "[base: 0x{:016X}, length: 0x{:016X}, mem_type: 0x{:?}]",
-            self.base_address, self.length, self.mem_type
-        )
-    }
-}
-
-struct MtrrCap {
-    variable_range_register_count: u8,
-    fixed_range_register_supported: bool,
-    write_combining_supported: bool,
-}
-
-struct MtrrDefType {
-    default_mem_type: MtrrMemoryType,
-    fixed_range_enable: u8,
-    mtrr_enable: u8,
-}
-
-fn mtrr_is_enabled() -> bool {
-    #[cfg(not(feature = "no-reg-rw"))]
-    {
-        let leaf = 0x1;
-        let CpuidResult { edx, .. } = unsafe { __cpuid(leaf) };
-
-        // 12th bit is not enabled if Memory Type Range Registers is not supported.
-        if (edx >> 12) & 1 == 0 {
-            return false;
+    if !mtrr_supported {
+        if let Some(fixed_mtrr_supported) = fixed_mtrr_supported {
+            *fixed_mtrr_supported = false;
         }
 
-        // if mtrr is supported check the support level(fixed vs variable)
-        let mtrr_cap = mtrr_get_mtrrcap();
-        // neither fixed not variable is supported
-        if !mtrr_cap.fixed_range_register_supported || mtrr_cap.variable_range_register_count == 0 {
-            return false;
+        if let Some(variable_mtrr_ranges_count) = variable_mtrr_ranges_count {
+            *variable_mtrr_ranges_count = 0;
         }
+        return false;
+    }
+
+    // Check the number of variable MTRRs and determine whether fixed MTRRs exist.
+    let mtrr_cap = asm_read_msr64(MSR_IA32_MTRRCAP); // MSR_IA32_MTRRCAP
+
+    let vcnt = (mtrr_cap & 0xFF) as u32; // VCNT is in bits [7:0]
+    let fix = ((mtrr_cap >> 8) & 0x1) == 1; // FIX is in bit 8
+
+    if let Some(fixed_mtrr_supported) = fixed_mtrr_supported {
+        *fixed_mtrr_supported = fix;
+    }
+
+    if let Some(variable_mtrr_ranges_count) = variable_mtrr_ranges_count {
+        *variable_mtrr_ranges_count = vcnt;
+    }
+
+    if vcnt == 0 && !fix {
+        return false;
     }
 
     true
 }
 
-fn mtrr_fixed_range_is_supported() -> bool {
-    #[cfg(not(feature = "no-reg-rw"))]
-    {
-        let mtrrcap = mtrr_get_mtrrcap();
-        mtrrcap.fixed_range_register_supported == true
-    }
-    #[cfg(feature = "no-reg-rw")]
-    {
-        true
-    }
+/**
+  Worker function returns the variable MTRR count for the CPU.
+
+  @return Variable MTRR count
+
+**/
+pub fn get_variable_mtrr_count_worker() -> u32 {
+    // Read the MSR to get the MTRR capabilities
+    let mtrr_cap = asm_read_msr64(MSR_IA32_MTRRCAP);
+
+    // Extract the VCNT field from the MSR value
+    let vcnt = (mtrr_cap & 0xFF) as u32; // VCNT is in bits [7:0]
+
+    // Ensure VCNT is within valid bounds
+    assert!(vcnt <= MTRR_NUMBER_OF_VARIABLE_MTRR as u32);
+
+    vcnt
 }
 
-fn mtrr_get_mtrrcap() -> MtrrCap {
-    #[cfg(not(feature = "no-reg-rw"))]
-    {
-        let mtrrcap_reg = unsafe { read_msr(MSR_IA32_MTRRCAP) };
+/**
+  Returns the variable MTRR count for the CPU.
 
-        MtrrCap {
-            variable_range_register_count: (mtrrcap_reg & 0xFF) as u8,
-            fixed_range_register_supported: ((mtrrcap_reg >> 8) & 1) == 1,
-            write_combining_supported: ((mtrrcap_reg >> 10) & 1) == 1,
-        }
+  @return Variable MTRR count
+
+**/
+pub fn get_variable_mtrr_count() -> u32 {
+    if !is_mtrr_supported() {
+        return 0;
     }
-    #[cfg(feature = "no-reg-rw")]
-    {
-        MtrrCap {
-            variable_range_register_count: 8,
-            fixed_range_register_supported: true,
-            write_combining_supported: true,
-        }
-    }
+
+    get_variable_mtrr_count_worker()
 }
 
-fn mtrr_get_mtrrdef() -> MtrrDefType {
-    #[cfg(not(feature = "no-reg-rw"))]
-    {
-        let mtrrdef_reg = unsafe { read_msr(MSR_IA32_MTRR_DEF_TYPE) };
+/**
+  Worker function returns the firmware usable variable MTRR count for the CPU.
 
-        MtrrDefType {
-            default_mem_type: (mtrrdef_reg & 0xFF).into(),
-            fixed_range_enable: ((mtrrdef_reg >> 10) & 1) as u8,
-            mtrr_enable: ((mtrrdef_reg >> 11) & 1) as u8,
-        }
+  @return Firmware usable variable MTRR count
+
+**/
+fn get_firmware_variable_mtrr_count_worker() -> u32 {
+    // Assuming the existence of these functions
+    let variable_mtrr_ranges_count = get_variable_mtrr_count_worker();
+    let reserved_mtrr_number = get_pcd_cpu_number_of_reserved_variable_mtrrs(); // VINEEL: PCD
+
+    if variable_mtrr_ranges_count < reserved_mtrr_number {
+        return 0;
     }
-    #[cfg(feature = "no-reg-rw")]
-    {
-        MtrrDefType {
-            default_mem_type: MtrrMemoryType::WriteBack,
-            fixed_range_enable: ((mtrrdef_reg >> 10) & 1) as u8,
-            mtrr_enable: ((mtrrdef_reg >> 11) & 1) as u8,
-        }
-    }
+
+    variable_mtrr_ranges_count - reserved_mtrr_number
 }
 
-fn mtrr_get_valid_address_mask() -> (u64, u64) {
-    let cpuid_extended_info_leaf = 0x80000000;
-    let cpuid_vir_phy_address_width_leaf = 0x80000008; // Processor Capacity Parameters and Extended Feature Identification
-    let max_extended_function = unsafe { __cpuid(cpuid_extended_info_leaf).eax };
-    let max_phy_address_width;
-    if max_extended_function >= cpuid_vir_phy_address_width_leaf {
-        max_phy_address_width = unsafe { (__cpuid(cpuid_vir_phy_address_width_leaf).eax & 0xFF) as u64 };
+/// Placeholder function to get the reserved MTRR number from PCD.
+///
+/// # Returns
+///
+/// The reserved number of variable MTRRs.
+fn get_pcd_cpu_number_of_reserved_variable_mtrrs() -> u32 {
+    // Implementation depends on how PCD values are accessed in your Rust environment
+    // This is a placeholder value
+    2 // Example reserved MTRR number
+}
+
+/**
+  Returns the firmware usable variable MTRR count for the CPU.
+
+  @return Firmware usable variable MTRR count
+
+**/
+fn get_firmware_variable_mtrr_count() -> u32 {
+    if !is_mtrr_supported() {
+        return 0;
+    }
+
+    get_firmware_variable_mtrr_count_worker()
+}
+
+/**
+  Worker function returns the default MTRR cache type for the system.
+
+  If MtrrSetting is not NULL, returns the default MTRR cache type from input
+  MTRR settings buffer.
+  If MtrrSetting is NULL, returns the default MTRR cache type from MSR.
+
+  @param[in]  MtrrSetting    A buffer holding all MTRRs content.
+
+  @return  The default MTRR cache type.
+
+**/
+fn mtrr_get_default_memory_type_worker(mtrr_setting: Option<&MtrrSettings>) -> MtrrMemoryCacheType {
+    let mut def_type: MsrIa32MtrrDefType = Default::default();
+
+    match mtrr_setting {
+        Some(settings) => {
+            def_type.set_mem_type((settings.mtrr_def_type & 0xFF) as u8);
+        }
+        None => {
+            def_type.set_mem_type((asm_read_msr64(MSR_IA32_MTRR_DEF_TYPE) & 0xFF) as u8);
+        }
+    }
+
+    def_type.mem_type().into()
+}
+
+/**
+  Returns the default MTRR cache type for the system.
+
+  @return  The default MTRR cache type.
+
+**/
+fn mtrr_get_default_memory_type() -> MtrrMemoryCacheType {
+    if !is_mtrr_supported() {
+        return MtrrMemoryCacheType::Uncacheable;
+    }
+
+    mtrr_get_default_memory_type_worker(None)
+}
+
+/**
+  Preparation before programming MTRR.
+
+  This function will do some preparation for programming MTRRs:
+  disable cache, invalid cache and disable MTRR caching functionality
+
+  @param[out] MtrrContext  Pointer to context to save
+
+**/
+fn mtrr_lib_pre_mtrr_change(mtrr_context: &mut MtrrContext) {
+    let mut def_type: MsrIa32MtrrDefType = Default::default();
+
+    // Disable interrupts and save current interrupt state
+    mtrr_context.interrupt_state = save_and_disable_interrupts();
+
+    // Enter no fill cache mode, CD=1(Bit30), NW=0 (Bit29)
+    asm_disable_cache();
+
+    // Save original CR4 value and clear PGE flag (Bit 7)
+    mtrr_context.cr4 = asm_read_cr4();
+    asm_write_cr4(mtrr_context.cr4 & !BIT7);
+
+    // Flush all TLBs
+    cpu_flush_tlb();
+
+    // Save current MTRR default type and disable MTRRs
+    mtrr_context.def_type = MsrIa32MtrrDefType::from_bits(asm_read_msr64(MSR_IA32_MTRR_DEF_TYPE));
+    def_type.set_mem_type(mtrr_context.def_type.mem_type());
+    def_type.set_e(false);
+    asm_write_msr64(MSR_IA32_MTRR_DEF_TYPE, def_type.into_bits());
+}
+
+/*
+  Cleaning up after programming MTRRs.
+
+  This function will do some clean up after programming MTRRs:
+  Flush all TLBs,  re-enable caching, restore CR4.
+
+  @param[in] MtrrContext  Pointer to context to restore
+
+*/
+fn mtrr_lib_post_mtrr_change_enable_cache(mtrr_context: &MtrrContext) {
+    // Flush all TLBs
+    cpu_flush_tlb();
+
+    // Enable Normal Mode caching CD=NW=0, CD(Bit30), NW(Bit29)
+    asm_enable_cache();
+
+    // Restore original CR4 value
+    asm_write_cr4(mtrr_context.cr4);
+
+    // Restore original interrupt state
+    set_interrupt_state(mtrr_context.interrupt_state);
+}
+
+/**
+  Cleaning up after programming MTRRs.
+
+  This function will do some clean up after programming MTRRs:
+  enable MTRR caching functionality, and enable cache
+
+  @param[in] MtrrContext  Pointer to context to restore
+
+**/
+fn mtrr_lib_post_mtrr_change(mtrr_context: &mut MtrrContext) {
+    // Enable Cache MTRR
+    // Note: It's possible that MTRR was not enabled earlier.
+    //       But it will be enabled here unconditionally.
+    mtrr_context.def_type.set_e(true);
+    asm_write_msr64(MSR_IA32_MTRR_DEF_TYPE, mtrr_context.def_type.into_bits());
+
+    // Call the function to enable cache
+    mtrr_lib_post_mtrr_change_enable_cache(mtrr_context);
+}
+
+/**
+  Worker function gets the content in fixed MTRRs
+
+  @param[out]  FixedSettings  A buffer to hold fixed MTRRs content.
+
+  @retval The pointer of FixedSettings
+
+**/
+fn mtrr_get_fixed_mtrr_worker(fixed_settings: &mut MtrrFixedSettings) -> &mut MtrrFixedSettings {
+    for (index, entry) in MMTRR_LIB_FIXED_MTRR_TABLE.iter().enumerate() {
+        if index < MTRR_NUMBER_OF_FIXED_MTRR {
+            fixed_settings.mtrr[index] = asm_read_msr64(entry.msr);
+        }
+    }
+
+    fixed_settings
+}
+
+/*
+  This function gets the content in fixed MTRRs
+
+  @param[out]  FixedSettings  A buffer to hold fixed MTRRs content.
+
+  @retval The pointer of FixedSettings
+
+*/
+pub fn mtrr_get_fixed_mtrr(fixed_settings: &mut MtrrFixedSettings) -> &mut MtrrFixedSettings {
+    if !is_mtrr_supported() {
+        return fixed_settings;
+    }
+
+    mtrr_get_fixed_mtrr_worker(fixed_settings)
+}
+
+/**
+  Worker function will get the raw value in variable MTRRs
+
+  If MtrrSetting is not NULL, gets the variable MTRRs raw value from input
+  MTRR settings buffer.
+  If MtrrSetting is NULL, gets the variable MTRRs raw value from MTRRs.
+
+  @param[in]  MtrrSetting        A buffer holding all MTRRs content.
+  @param[in]  VariableMtrrRangesCount  Number of variable MTRRs.
+  @param[out] VariableMtrrSettings   A buffer to hold variable MTRRs content.
+
+  @return The VariableMtrrSettings input pointer
+
+**/
+pub fn mtrr_get_variable_mtrr_worker<'a>(
+    mtrr_setting: Option<&MtrrSettings>,
+    variable_mtrr_ranges_count: u32,
+    variable_mtrr_settings: &'a mut MtrrVariableSettings,
+) -> &'a mut MtrrVariableSettings {
+    assert!(variable_mtrr_ranges_count <= variable_mtrr_settings.mtrr.len() as u32);
+
+    for index in 0..variable_mtrr_ranges_count as usize {
+        if let Some(settings) = mtrr_setting {
+            variable_mtrr_settings.mtrr[index].base = settings.variables.mtrr[index].base;
+            variable_mtrr_settings.mtrr[index].mask = settings.variables.mtrr[index].mask;
+        } else {
+            let base_msr = MSR_IA32_MTRR_PHYSBASE0 + (index as u32 * 2);
+            let mask_msr = MSR_IA32_MTRR_PHYSMASK0 + (index as u32 * 2);
+            variable_mtrr_settings.mtrr[index].base = asm_read_msr64(base_msr);
+            variable_mtrr_settings.mtrr[index].mask = asm_read_msr64(mask_msr);
+        }
+    }
+
+    variable_mtrr_settings
+}
+
+/**
+  Programs fixed MTRRs registers.
+
+  @param[in]      Type             The memory type to set.
+  @param[in, out] Base             The base address of memory range.
+  @param[in, out] Length           The length of memory range.
+  @param[in, out] LastMsrIndex     On input, the last index of the fixed MTRR MSR to program.
+                                   On return, the current index of the fixed MTRR MSR to program.
+  @param[out]     ClearMask        The bits to clear in the fixed MTRR MSR.
+  @param[out]     OrMask           The bits to set in the fixed MTRR MSR.
+
+  @retval RETURN_SUCCESS      The cache type was updated successfully
+  @retval RETURN_UNSUPPORTED  The requested range or cache type was invalid
+                              for the fixed MTRRs.
+
+**/
+pub fn mtrr_lib_program_fixed_mtrr(
+    mem_type: u8,
+    base: &mut u64,
+    length: &mut u64,
+    last_msr_index: &mut u32,
+    clear_mask: &mut u64,
+    or_mask: &mut u64,
+) -> ReturnStatus {
+    let mut msr_index: u32 = *last_msr_index + 1;
+    let left_byte_shift: u32;
+    let right_byte_shift: u32;
+    let mut sub_length: u64;
+
+    // Find the fixed MTRR index to be programmed
+    while msr_index < MMTRR_LIB_FIXED_MTRR_TABLE.len() as u32 {
+        let entry = &MMTRR_LIB_FIXED_MTRR_TABLE[msr_index as usize];
+        if (*base >= entry.base_address as u64) && (*base < (entry.base_address as u64 + 8 * entry.length as u64)) {
+            break;
+        }
+        msr_index += 1;
+    }
+
+    if msr_index == MMTRR_LIB_FIXED_MTRR_TABLE.len() as u32 {
+        return RETURN_UNSUPPORTED;
+    }
+
+    // Find the begin offset in fixed MTRR and calculate byte offset of left shift
+    let entry = &MMTRR_LIB_FIXED_MTRR_TABLE[msr_index as usize];
+    if ((*base - entry.base_address as u64) % entry.length as u64) != 0 {
+        return RETURN_UNSUPPORTED;
+    }
+
+    left_byte_shift = ((*base - entry.base_address as u64) / entry.length as u64) as u32;
+    if left_byte_shift >= 8 {
+        return RETURN_UNSUPPORTED;
+    }
+
+    // Find the end offset in fixed MTRR and calculate byte offset of right shift
+    sub_length = entry.length as u64 * (8 - left_byte_shift) as u64;
+    if *length >= sub_length {
+        right_byte_shift = 0;
     } else {
-        max_phy_address_width = 36;
-    }
-
-    // TODO: incorporate TME-MK logic
-
-    let valid_bit_mask = (1 << max_phy_address_width) - 1;
-    let valid_address_mask = valid_bit_mask & 0xffff_ffff_ffff_f000;
-
-    (valid_bit_mask, valid_address_mask)
-}
-
-fn mtrr_validate_ranges(ranges: &Vec<MtrrRange>) -> MtrrResult<()> {
-    let (valid_bit_mask, valid_address_mask) = mtrr_get_valid_address_mask();
-    for range in ranges {
-        if range.base_address & valid_address_mask != 0 {
-            return Err(MtrrError::InvalidMemoryRange);
+        if (*length % entry.length as u64) != 0 {
+            return RETURN_UNSUPPORTED;
         }
 
-        // address + length should either fall with in the valid address range
-        // or it should be the max (this happens when the full range is requested)
-        if (range.base_address + range.length) & !valid_address_mask != 0
-            && (range.base_address + range.length) != valid_bit_mask + 1
-        {
-            return Err(MtrrError::InvalidMemoryRange);
+        right_byte_shift = 8 - left_byte_shift - (*length / entry.length as u64) as u32;
+        sub_length = *length;
+    }
+
+    *clear_mask = CLEAR_SEED;
+    *or_mask = mult_u64x32(OR_SEED, mem_type as u32);
+
+    if left_byte_shift != 0 {
+        *clear_mask &= lshift_u64(*clear_mask, left_byte_shift * 8);
+        *or_mask &= lshift_u64(*or_mask, left_byte_shift * 8);
+    }
+
+    if right_byte_shift != 0 {
+        *clear_mask &= rshift_u64(*clear_mask, right_byte_shift * 8);
+        *or_mask &= rshift_u64(*or_mask, right_byte_shift * 8);
+    }
+
+    *length -= sub_length;
+    *base += sub_length;
+
+    *last_msr_index = msr_index;
+
+    RETURN_SUCCESS
+}
+
+/**
+  Worker function gets the attribute of variable MTRRs.
+
+  This function shadows the content of variable MTRRs into an
+  internal array: VariableMtrrRanges.
+
+  @param[in]   VariableMtrrSettings      The variable MTRR values to shadow
+  @param[in]   VariableMtrrRangesCount     The number of variable MTRRs
+  @param[in]   MtrrValidBitsMask     The mask for the valid bit of the MTRR
+  @param[in]   MtrrValidAddressMask  The valid address mask for MTRR
+  @param[out]  VariableMtrrRanges          The array to shadow variable MTRRs content
+
+  @return      Number of MTRRs which has been used.
+
+**/
+pub fn mtrr_get_memory_attribute_in_variable_mtrr_worker(
+    variable_mtrr_settings: &MtrrVariableSettings,
+    variable_mtrr_ranges_count: usize,
+    mtrr_valid_bits_mask: u64,
+    mtrr_valid_address_mask: u64,
+    variable_mtrr_ranges: &mut [VariableMtrr],
+) -> u32 {
+    let mut used_mtrr = 0;
+
+    // zeroize variable mtrr ranges
+    unsafe {
+        core::ptr::write_bytes(variable_mtrr_ranges.as_mut_ptr(), 0, variable_mtrr_ranges.len());
+    }
+
+    for index in 0..variable_mtrr_ranges_count {
+        let entry = &variable_mtrr_settings.mtrr[index];
+        let mask = entry.mask;
+        let base = entry.base;
+
+        // Check if the MTRR is valid
+        if (mask >> 11) & 1 != 0 {
+            variable_mtrr_ranges[index].msr = index as u32;
+            variable_mtrr_ranges[index].base_address = base & mtrr_valid_address_mask;
+            variable_mtrr_ranges[index].length = ((!(mask & mtrr_valid_address_mask)) & mtrr_valid_bits_mask) + 1;
+            variable_mtrr_ranges[index].mem_type = (base & 0xff) as u8;
+            variable_mtrr_ranges[index].valid = true;
+            variable_mtrr_ranges[index].used = true;
+            used_mtrr += 1;
         }
     }
 
-    Ok(())
+    used_mtrr
 }
 
-fn mtrr_read_active_ranges() -> Vec<MtrrRange> {
-    let mut ranges: Vec<MtrrRange> = Vec::new();
-    let (valid_bit_mask, valid_address_mask) = mtrr_get_valid_address_mask();
-    let variable_range_register_count = mtrr_get_mtrrcap().variable_range_register_count;
+/**
+  Convert variable MTRRs to a RAW MTRR_MEMORY_RANGE array.
+  One MTRR_MEMORY_RANGE element is created for each MTRR setting.
+  The routine doesn't remove the overlap or combine the near-by region.
 
-    let phy_base_msr = MSR_IA32_MTRR_PHYSBASE0;
-    let phy_mask_msr = MSR_IA32_MTRR_PHYSMASK0;
+  @param[in]   VariableMtrrSettings      The variable MTRR values to shadow
+  @param[in]   VariableMtrrRangesCount     The number of variable MTRRs
+  @param[in]   MtrrValidBitsMask     The mask for the valid bit of the MTRR
+  @param[in]   MtrrValidAddressMask  The valid address mask for MTRR
+  @param[out]  VariableMtrrRanges          The array to shadow variable MTRRs content
 
-    for i in 0..variable_range_register_count as u32 {
-        let phy_mask_msr_value = unsafe { read_msr(phy_mask_msr + 2 * i) };
-        let valid = (phy_mask_msr_value >> 11) & 1 == 1;
-        if valid {
-            let phy_base_msr_value = unsafe { read_msr(phy_base_msr + 2 * i) };
-            let base_address = valid_address_mask;
-            let length = (!(phy_mask_msr_value & valid_address_mask) & valid_bit_mask) + 1;
-            let mem_type = phy_base_msr_value & 0xff;
-            ranges.push(MtrrRange { base_address, length, mem_type: mem_type.into() });
+  @return      Number of MTRRs which has been used.
+
+**/
+pub fn mtrr_lib_get_raw_variable_ranges(
+    variable_mtrr_settings: &MtrrVariableSettings,
+    variable_mtrr_ranges_count: usize,
+    mtrr_valid_bits_mask: u64,
+    mtrr_valid_address_mask: u64,
+    variable_mtrr_ranges: &mut [MtrrMemoryRange],
+) -> u32 {
+    let mut used_mtrr = 0;
+
+    for index in 0..variable_mtrr_ranges_count {
+        let entry = &variable_mtrr_settings.mtrr[index];
+        let mask = entry.mask;
+        let base = entry.base;
+
+        // Check if the MTRR is valid
+        if (mask >> 11) & 1 != 0 {
+            variable_mtrr_ranges[index].base_address = base & mtrr_valid_address_mask;
+            variable_mtrr_ranges[index].length = ((!(mask & mtrr_valid_address_mask)) & mtrr_valid_bits_mask) + 1;
+            variable_mtrr_ranges[index].mem_type = MtrrMemoryCacheType::from((base & 0x0ff) as u8).into();
+            used_mtrr += 1;
         }
     }
 
-    ranges
+    used_mtrr
 }
 
-fn mtrr_set_variable_range_memory_attributes(address: u64, length: u64, mem_type: MtrrMemoryType) -> MtrrResult<()> {
-    let original_ranges = mtrr_read_active_ranges();
+/**
+  Gets the attribute of variable MTRRs.
 
-    Ok(())
-}
-// fn mtrr_write_active_ranges(ranges: &Vec<MtrrRange>) {
-//     let variable_range_register_count = mtrr_get_mtrrcap().variable_range_register_count;
+  This function shadows the content of variable MTRRs into an
+  internal array: VariableMtrrRanges.
 
-//     let phy_base_msr = MSR_IA32_MTRR_PHYSBASE0;
-//     let phy_mask_msr = MSR_IA32_MTRR_PHYSMASK0;
+  @param[in]   MtrrValidBitsMask     The mask for the valid bit of the MTRR
+  @param[in]   MtrrValidAddressMask  The valid address mask for MTRR
+  @param[out]  VariableMtrrRanges          The array to shadow variable MTRRs content
 
-//     for i in 0..variable_range_register_count as u32 {
-//         let phy_base_msr_value = MtrrPhyBase::from_bits(unsafe { read_msr(phy_base_msr + 2 * i) });
-//         let phy_mask_msr_value = MtrrPhyMask::from_bits(unsafe { read_msr(phy_mask_msr + 2 * i) });
-//         ranges.push(MtrrRange {
-//             base_address: phy_base_msr_value.base_address(),
-//             length: (!phy_mask_msr_value.mask()) + 1,
-//             mem_type: phy_base_msr_value.mem_type().into(),
-//         });
-//     }
-// }
+  @return                       The return value of this parameter indicates the
+                                number of MTRRs which has been used.
 
-pub fn mtrr_set_attributes(ranges: &mut Vec<MtrrRange>) -> MtrrResult<()> {
-    if !mtrr_is_enabled() {
-        return Err(MtrrError::MtrrDisabled);
+**/
+pub fn mtrr_get_memory_attribute_in_variable_mtrr(
+    mtrr_valid_bits_mask: u64,
+    mtrr_valid_address_mask: u64,
+    variable_mtrr_ranges: &mut [VariableMtrr],
+) -> u32 {
+    // Check if MTRR is supported
+    if !is_mtrr_supported() {
+        return 0;
     }
 
-    mtrr_validate_ranges(ranges)?;
+    // Initialize the variable MTRR settings
+    let mut variable_mtrr_settings = MtrrVariableSettings::default();
 
-    let mtrr_fixed_range_supported = mtrr_fixed_range_is_supported();
-    for range in ranges {
-        let address = range.base_address;
-        let length = range.length;
-        let mem_type = range.mem_type;
+    // Get the variable MTRR settings
+    mtrr_get_variable_mtrr_worker(None, get_variable_mtrr_count_worker(), &mut variable_mtrr_settings);
 
-        if mtrr_fixed_range_supported {
-            if address + length - 1 < SIZE_1MB as u64 {
-                // in fixed range
-                let _ = mtrr_set_fixed_range_memory_attributes(address as u32, length as u32, mem_type);
-            } else if address >= SIZE_1MB as u64 {
-                // in variable range
-                let _ = mtrr_set_variable_range_memory_attributes(address, length, mem_type);
-            } else {
-                //split the overlapping range
-                let address = range.base_address;
-                let length = SIZE_1MB as u64 - address;
-                let _ = mtrr_set_fixed_range_memory_attributes(address as u32, length as u32, mem_type);
+    // Get the memory attributes in the variable MTRR
+    mtrr_get_memory_attribute_in_variable_mtrr_worker(
+        &variable_mtrr_settings,
+        get_firmware_variable_mtrr_count_worker() as usize,
+        mtrr_valid_bits_mask,
+        mtrr_valid_address_mask,
+        variable_mtrr_ranges,
+    )
+}
 
-                let address = SIZE_1MB as u64;
-                let length = range.length - SIZE_1MB as u64;
-                let _ = mtrr_set_variable_range_memory_attributes(address, length, mem_type);
+/**
+  Return the biggest alignment (lowest set bit) of address.
+  The function is equivalent to: 1 << LowBitSet64 (Address).
+
+  @param Address    The address to return the alignment.
+  @param Alignment0 The alignment to return when Address is 0.
+
+  @return The least alignment of the Address.
+**/
+pub fn mtrr_lib_biggest_alignment(address: u64, alignment0: u64) -> u64 {
+    if address == 0 {
+        alignment0
+    } else {
+        address & (!address + 1)
+    }
+}
+
+/**
+  Return whether the left MTRR type precedes the right MTRR type.
+
+  The MTRR type precedence rules are:
+    1. UC precedes any other type
+    2. WT precedes WB
+  For further details, please refer the IA32 Software Developer's Manual,
+  Volume 3, Section "MTRR Precedences".
+
+  @param Left  The left MTRR type.
+  @param Right The right MTRR type.
+
+  @retval TRUE  Left precedes Right.
+  @retval FALSE Left doesn't precede Right.
+**/
+pub fn mtrr_lib_type_left_precede_right(left: MtrrMemoryCacheType, right: MtrrMemoryCacheType) -> bool {
+    left == MtrrMemoryCacheType::Uncacheable
+        || (left == MtrrMemoryCacheType::WriteThrough && right == MtrrMemoryCacheType::WriteBack)
+}
+
+/**
+  Initializes the valid bits mask and valid address mask for MTRRs.
+
+  This function initializes the valid bits mask and valid address mask for MTRRs.
+
+  @param[out]  MtrrValidBitsMask     The mask for the valid bit of the MTRR
+  @param[out]  MtrrValidAddressMask  The valid address mask for the MTRR
+
+**/
+pub fn mtrr_lib_initialize_mtrr_mask(mtrr_valid_bits_mask: &mut u64, mtrr_valid_address_mask: &mut u64) {
+    let mut vir_phy_address_size = CpuidVirPhyAddressSizeEax::default();
+
+    // Get maximum CPUID function number
+    let max_extended_function = asm_cpuid(CPUID_EXTENDED_FUNCTION).eax;
+
+    // Check if CPUID_VIR_PHY_ADDRESS_SIZE is supported
+    if max_extended_function >= CPUID_VIR_PHY_ADDRESS_SIZE {
+        let vir_phy_address_size_u32 = asm_cpuid(CPUID_VIR_PHY_ADDRESS_SIZE).eax;
+        vir_phy_address_size = CpuidVirPhyAddressSizeEax::from_bits(vir_phy_address_size_u32);
+    } else {
+        vir_phy_address_size.set_physical_address_bits(36);
+    }
+
+    // CPUID enumeration of MAX_PA is unaffected by TME-MK activation and will continue
+    // to report the maximum physical address bits available for software to use,
+    // irrespective of the number of KeyID bits.
+    // So, we need to check if TME is enabled and adjust the PA size accordingly.
+    let max_function = asm_cpuid(CPUID_SIGNATURE).eax;
+    if max_function >= CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS {
+        let extended_feature_flags_ecx_u32 = asm_cpuid_ex(CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS, 0).ecx;
+
+        let extended_feature_flags_ecx = CpuidStructuredExtendedFeatureFlagsEcx::from_bits(extended_feature_flags_ecx_u32);
+
+        if extended_feature_flags_ecx.tme_en() {
+            let tme_activate = MsrIa32TmeActivateRegister::from_bits(asm_read_msr64(MSR_IA32_TME_ACTIVATE));
+            if tme_activate.tme_enable() {
+                vir_phy_address_size.set_physical_address_bits(
+                    vir_phy_address_size.physical_address_bits() - tme_activate.mk_tme_keyid_bits(),
+                );
             }
-        } else {
-            let _ = mtrr_set_variable_range_memory_attributes(address, length, mem_type);
-        }
-    }
-    Ok(())
-}
-
-pub fn mtrr_get_attributes(_address: u64, _size: u64) -> MtrrResult<u8> {
-    // TODO: implement setting mtrr variable memory ranges
-    Ok(0)
-}
-
-pub fn mtrr_dump() {}
-
-fn get_mtrr_fixed_ranges() -> [MtrrFixedRange; 12] {
-    // Fixed-Range MTRR Address Ranges
-    // |63-56      |55-48      |47-40      |39-32      |31-24      |23-16      |15-8       |7-0        |Register Name(MSR)|
-    // +-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+------------------+
-    // |70000-7FFFF|60000-6FFFF|50000-5FFFF|40000-4FFFF|30000-3FFFF|20000-2FFFF|10000-1FFFF|00000-0FFFF|MTRRfix64K_00000  |
-    // |9C000-9FFFF|98000-9BFFF|94000-97FFF|90000-93FFF|8C000-8FFFF|88000-8BFFF|84000-87FFF|80000-83FFF|MTRRfix16K_80000  |
-    // |BC000-BFFFF|B8000-BBFFF|B4000-B7FFF|B0000-B3FFF|AC000-AFFFF|A8000-ABFFF|A4000-A7FFF|A0000-A3FFF|MTRRfix16K_A0000  |
-    // |C7000-C7FFF|C6000-C6FFF|C5000-C5FFF|C4000-C4FFF|C3000-C3FFF|C2000-C2FFF|C1000-C1FFF|C0000-C0FFF|MTRRfix4K_C0000   |
-    // |CF000-CFFFF|CE000-CEFFF|CD000-CDFFF|CC000-CCFFF|CB000-CBFFF|CA000-CAFFF|C9000-C9FFF|C8000-C8FFF|MTRRfix4K_C8000   |
-    // |D7000-D7FFF|D6000-D6FFF|D5000-D5FFF|D4000-D4FFF|D3000-D3FFF|D2000-D2FFF|D1000-D1FFF|D0000-D0FFF|MTRRfix4K_D0000   |
-    // |DF000-DFFFF|DE000-DEFFF|DD000-DDFFF|DC000-DCFFF|DB000-DBFFF|DA000-DAFFF|D9000-D9FFF|D8000-D8FFF|MTRRfix4K_D8000   |
-    // |E7000-E7FFF|E6000-E6FFF|E5000-E5FFF|E4000-E4FFF|E3000-E3FFF|E2000-E2FFF|E1000-E1FFF|E0000-E0FFF|MTRRfix4K_E0000   |
-    // |EF000-EFFFF|EE000-EEFFF|ED000-EDFFF|EC000-ECFFF|EB000-EBFFF|EA000-EAFFF|E9000-E9FFF|E8000-E8FFF|MTRRfix4K_E8000   |
-    // |F7000-F7FFF|F6000-F6FFF|F5000-F5FFF|F4000-F4FFF|F3000-F3FFF|F2000-F2FFF|F1000-F1FFF|F0000-F0FFF|MTRRfix4K_F0000   |
-    // |FF000-FFFFF|FE000-FEFFF|FD000-FDFFF|FC000-FCFFF|FB000-FBFFF|FA000-FAFFF|F9000-F9FFF|F8000-F8FFF|MTRRfix4K_F8000   |
-    // |E7000-E7FFF|E6000-E6FFF|E5000-E5FFF|E4000-E4FFF|E3000-E3FFF|E2000-E2FFF|E1000-E1FFF|E0000-E0FFF|MTRRfix4K_E0000   |
-    // |EF000-EFFFF|EE000-EEFFF|ED000-EDFFF|EC000-ECFFF|EB000-EBFFF|EA000-EAFFF|E9000-E9FFF|E8000-E8FFF|MTRRfix4K_E8000   |
-    // |F7000-F7FFF|F6000-F6FFF|F5000-F5FFF|F4000-F4FFF|F3000-F3FFF|F2000-F2FFF|F1000-F1FFF|F0000-F0FFF|MTRRfix4K_F0000   |
-    // |FF000-FFFFF|FE000-FEFFF|FD000-FDFFF|FC000-FCFFF|FB000-FBFFF|FA000-FAFFF|F9000-F9FFF|F8000-F8FFF|MTRRfix4K_F8000   |
-    [
-        MtrrFixedRange::new(MSR_IA32_MTRR_FIX64K_00000, 0x00000, SIZE_64KB),
-        MtrrFixedRange::new(MSR_IA32_MTRR_FIX16K_80000, 0x80000, SIZE_16KB),
-        MtrrFixedRange::new(MSR_IA32_MTRR_FIX16K_A0000, 0xA0000, SIZE_16KB),
-        MtrrFixedRange::new(MSR_IA32_MTRR_FIX4K_C0000, 0xC0000, SIZE_4KB),
-        MtrrFixedRange::new(MSR_IA32_MTRR_FIX4K_C8000, 0xC8000, SIZE_4KB),
-        MtrrFixedRange::new(MSR_IA32_MTRR_FIX4K_D0000, 0xD0000, SIZE_4KB),
-        MtrrFixedRange::new(MSR_IA32_MTRR_FIX4K_D8000, 0xD8000, SIZE_4KB),
-        MtrrFixedRange::new(MSR_IA32_MTRR_FIX4K_E0000, 0xE0000, SIZE_4KB),
-        MtrrFixedRange::new(MSR_IA32_MTRR_FIX4K_E8000, 0xE8000, SIZE_4KB),
-        MtrrFixedRange::new(MSR_IA32_MTRR_FIX4K_F0000, 0xF0000, SIZE_4KB),
-        MtrrFixedRange::new(MSR_IA32_MTRR_FIX4K_F8000, 0xF8000, SIZE_4KB),
-        MtrrFixedRange::new(0, 0x100000, SIZE_4KB),
-    ]
-}
-
-/// Function to update mtrr fixed range memory attributes ie., memory ranges below < 1MB
-fn mtrr_set_fixed_range_memory_attributes(address: u32, length: u32, mem_type: MtrrMemoryType) -> MtrrResult<()> {
-    if !mtrr_fixed_range_is_supported() {
-        return Err(MtrrError::MtrrDisabled);
-    }
-
-    let mut fixed_ranges = get_mtrr_fixed_ranges();
-
-    mtrr_set_fixed_range_memory_attributes_internal(address, length, mem_type, &mut fixed_ranges)?;
-
-    // Program the updated mtrr MSRs
-    for range in fixed_ranges {
-        if range.needs_update {
-            unsafe { write_msr(range.mtrr_msr, range.mtrr_msr_value) };
         }
     }
 
-    Ok(())
+    *mtrr_valid_bits_mask = (1u64 << vir_phy_address_size.physical_address_bits()) - 1;
+    *mtrr_valid_address_mask = *mtrr_valid_bits_mask & 0xfffffffffffff000u64;
 }
 
-/// Function performs the actual ranges of mtrr fixed msr that need to be
-/// updated for the given range. The function is separated from its non internal
-/// version to make the logic unit testable.
-fn mtrr_set_fixed_range_memory_attributes_internal(
-    mut address: u32,
-    length: u32,
-    mem_type: MtrrMemoryType,
-    fixed_ranges: &mut [MtrrFixedRange; 12],
-) -> MtrrResult<(u32, u32)> {
-    let fixed_ranges_len = fixed_ranges.len();
+/**
+  Determines the real attribute of a memory range.
 
-    if length == 0 {
-        // panic!("length cannot be zero");
-        return Err(MtrrError::InvalidMemoryRange);
+  This function is to arbitrate the real attribute of the memory when
+  there are 2 MTRRs covers the same memory range. For further details,
+  please refer the IA32 Software Developer's Manual, Volume 3,
+  Section "MTRR Precedences".
+
+  @param[in]  MtrrType1    The first kind of Memory type
+  @param[in]  MtrrType2    The second kind of memory type
+
+**/
+pub fn mtrr_lib_precedence(mtrr_type1: MtrrMemoryCacheType, mtrr_type2: MtrrMemoryCacheType) -> MtrrMemoryCacheType {
+    if mtrr_type1 == mtrr_type2 {
+        return mtrr_type1;
     }
 
-    // check memory bounds
-    if address >= fixed_ranges[fixed_ranges_len - 1].base
-        || address + length - 1 >= fixed_ranges[fixed_ranges_len - 1].base
-    {
-        // panic!("address or address + length cannot be greater than 1MB");
-        return Err(MtrrError::Above1MBMemoryRange);
+    if mtrr_lib_type_left_precede_right(mtrr_type1, mtrr_type2) {
+        mtrr_type1
+    } else {
+        mtrr_type2
+    }
+}
+
+pub fn mtrr_get_memory_attribute_by_address_worker(
+    mtrr_settings: Option<&MtrrSettings>,
+    address: u64,
+) -> MtrrMemoryCacheType {
+    let def_type = if let Some(settings) = mtrr_settings {
+        MsrIa32MtrrDefType::from(settings.mtrr_def_type)
+    } else {
+        MsrIa32MtrrDefType::from(asm_read_msr64(MSR_IA32_MTRR_DEF_TYPE))
+    };
+
+    if !def_type.e() {
+        return MtrrMemoryCacheType::Uncacheable;
     }
 
-    // find the lowest fixed mtrr for the given address
-    let mut min = 0;
-    while min < fixed_ranges_len - 1 {
-        if address >= fixed_ranges[min + 1].base {
-            min += 1;
-        } else {
+    // If address is less than 1M, then try to go through the fixed MTRR
+    if address < SIZE_1MB as u64 {
+        if def_type.fe() {
+            for index in 0..MTRR_NUMBER_OF_FIXED_MTRR {
+                if (address >= MMTRR_LIB_FIXED_MTRR_TABLE[index].base_address as u64)
+                    && (address
+                        < MMTRR_LIB_FIXED_MTRR_TABLE[index].base_address as u64
+                            + (MMTRR_LIB_FIXED_MTRR_TABLE[index].length as u64 * 8))
+                {
+                    let sub_index = (address - MMTRR_LIB_FIXED_MTRR_TABLE[index].base_address as u64)
+                        / MMTRR_LIB_FIXED_MTRR_TABLE[index].length as u64;
+                    let fixed_mtrr = if let Some(settings) = mtrr_settings {
+                        settings.fixed.mtrr[index]
+                    } else {
+                        asm_read_msr64(MMTRR_LIB_FIXED_MTRR_TABLE[index].msr)
+                    };
+                    return (((fixed_mtrr >> (sub_index * 8)) & 0xFF) as u8).into();
+                }
+            }
+        }
+    }
+
+    let variable_mtrr_ranges_count = get_variable_mtrr_count_worker();
+
+    let mut variable_mtrr_settings = Default::default();
+    mtrr_get_variable_mtrr_worker(mtrr_settings, variable_mtrr_ranges_count, &mut variable_mtrr_settings);
+    let mut mtrr_valid_bits_mask = 0;
+    let mut mtrr_valid_address_mask = 0;
+    mtrr_lib_initialize_mtrr_mask(&mut mtrr_valid_bits_mask, &mut mtrr_valid_address_mask);
+    let mut variable_mtrr_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_VARIABLE_MTRR] = Default::default();
+    let _ = mtrr_lib_get_raw_variable_ranges(
+        &variable_mtrr_settings,
+        variable_mtrr_ranges_count as usize,
+        mtrr_valid_bits_mask,
+        mtrr_valid_address_mask,
+        &mut variable_mtrr_ranges,
+    );
+
+    // Go through the variable MTRR
+    let mut mem_type = MtrrMemoryCacheType::Invalid;
+    for range in variable_mtrr_ranges.iter() {
+        if range.length != 0 {
+            if (address >= range.base_address) && (address < range.base_address + range.length) {
+                if mem_type == MtrrMemoryCacheType::Invalid {
+                    mem_type = range.mem_type;
+                } else {
+                    mem_type = mtrr_lib_precedence(mem_type, range.mem_type);
+                }
+            }
+        }
+    }
+
+    // If there is no MTRR which covers the Address, use the default MTRR type.
+    if mem_type == MtrrMemoryCacheType::Invalid {
+        mem_type = def_type.mem_type().into();
+    }
+
+    mem_type
+}
+
+/**
+  This function will get the memory cache type of the specific address.
+
+  This function is mainly for debug purpose.
+
+  @param[in]  Address   The specific address
+
+  @return Memory cache type of the specific address
+
+**/
+pub fn mtrr_get_memory_attribute(address: u64) -> MtrrMemoryCacheType {
+    if !is_mtrr_supported() {
+        return MtrrMemoryCacheType::Uncacheable;
+    }
+
+    mtrr_get_memory_attribute_by_address_worker(None, address)
+}
+
+/**
+  Update the Ranges array to change the specified range identified by
+  BaseAddress and Length to Type.
+
+  @param Ranges      Array holding memory type settings for all memory regions.
+  @param Capacity    The maximum count of memory ranges the array can hold.
+  @param Count       Return the new memory range count in the array.
+  @param BaseAddress The base address of the memory range to change type.
+  @param Length      The length of the memory range to change type.
+  @param Type        The new type of the specified memory range.
+
+  @retval RETURN_SUCCESS          The type of the specified memory range is
+                                  changed successfully.
+  @retval RETURN_ALREADY_STARTED  The type of the specified memory range equals
+                                  to the desired type.
+  @retval RETURN_OUT_OF_RESOURCES The new type set causes the count of memory
+                                  range exceeds capacity.
+**/
+fn mtrr_lib_set_memory_type(
+    working_ranges: &mut [MtrrMemoryRange],
+    working_ranges_capacity: usize,
+    working_ranges_count: &mut usize,
+    mut base_address: u64,
+    mut length: u64,
+    mem_type: MtrrMemoryCacheType,
+) -> ReturnStatus {
+    assert!(length != 0);
+
+    let mut length_left = 0;
+    let mut length_right = 0;
+    let limit = base_address + length;
+    let mut start_index = *working_ranges_count;
+    let mut end_index = *working_ranges_count;
+
+    // Determine which existing range can accommodate the new range
+    for index in 0..*working_ranges_count {
+        let range = &working_ranges[index];
+
+        // start index can begin on one slot and end index could land on another
+        // slot depending up on the size of the new range
+        if start_index == *working_ranges_count
+            && range.base_address <= base_address
+            && base_address < range.base_address + range.length
+        {
+            start_index = index;
+            length_left = base_address - range.base_address;
+        }
+
+        if end_index == *working_ranges_count
+            && range.base_address < limit
+            && limit <= range.base_address + range.length
+        {
+            end_index = index;
+            length_right = range.base_address + range.length - limit;
             break;
         }
     }
 
-    // find the highest fixed mtrr for the given address + length
-    let mut max = fixed_ranges_len;
-    while max - 1 > 0 {
-        if address + length - 1 < fixed_ranges[max - 1].base {
-            max -= 1;
-        } else {
+    assert!(start_index != *working_ranges_count && end_index != *working_ranges_count);
+    if start_index == end_index && working_ranges[start_index].mem_type == mem_type {
+        return RETURN_ALREADY_STARTED;
+    }
+
+    // The type change may cause merging with previous range or next range.
+    // Update the StartIndex, EndIndex, BaseAddress, Length so that following
+    // logic doesn't need to consider merging.
+    if start_index != 0 {
+        if length_left == 0 && working_ranges[start_index - 1].mem_type == mem_type {
+            start_index -= 1;
+            length += working_ranges[start_index].length;
+            base_address -= working_ranges[start_index].length;
+        }
+    }
+
+    if end_index != *working_ranges_count - 1 {
+        if length_right == 0 && working_ranges[end_index + 1].mem_type == mem_type {
+            end_index += 1;
+            length += working_ranges[end_index].length;
+        }
+    }
+
+    let mut delta_count = end_index - start_index - 2;
+
+    if length_left == 0 {
+        delta_count += 1;
+    }
+    if length_right == 0 {
+        delta_count += 1;
+    }
+
+    if *working_ranges_count - delta_count > working_ranges_capacity {
+        return RETURN_OUT_OF_RESOURCES;
+    }
+
+    // Reserve space for the new ranges
+    // for i in (*working_ranges_count - delta_count)..*working_ranges_count {
+    //     working_ranges[i + delta_count] = working_ranges[i].clone();
+    // }
+
+    for i in 0..(*working_ranges_count - end_index - 1) {
+        working_ranges[i + end_index + 1 - delta_count] = working_ranges[i + end_index + 1].clone();
+    }
+
+    *working_ranges_count -= delta_count;
+
+    if length_left != 0 {
+        working_ranges[start_index].length = length_left;
+        start_index += 1;
+    }
+
+    if length_right != 0 {
+        working_ranges[end_index - delta_count].base_address = base_address + length;
+        working_ranges[end_index - delta_count].length = length_right;
+        working_ranges[end_index - delta_count].mem_type = working_ranges[end_index].mem_type;
+    }
+
+    working_ranges[start_index].base_address = base_address;
+    working_ranges[start_index].length = length;
+    working_ranges[start_index].mem_type = mem_type;
+
+    RETURN_SUCCESS
+}
+
+/**
+  Return the number of memory types in range [BaseAddress, BaseAddress + Length).
+
+  @param Ranges      Array holding memory type settings for all memory regions.
+  @param RangeCount  The count of memory ranges the array holds.
+  @param BaseAddress Base address.
+  @param Length      Length.
+  @param Types       Return bit mask to indicate all memory types in the specified range.
+
+  @retval  Number of memory types.
+**/
+fn mtrr_lib_get_number_of_types(
+    ranges: &[MtrrMemoryRange],
+    range_count: usize,
+    mut base_address: u64,
+    mut length: u64,
+    types: Option<&mut u8>,
+) -> u8 {
+    let mut type_count = 0;
+    let mut local_types: u8 = 0;
+
+    for index in 0..range_count {
+        let range = &ranges[index];
+
+        if range.base_address <= base_address && base_address < range.base_address + range.length {
+            if local_types & (1 << range.mem_type as u8) == 0 {
+                local_types |= 1 << range.mem_type as u8;
+                type_count += 1;
+            }
+
+            if base_address + length > range.base_address + range.length {
+                length -= range.base_address + range.length - base_address;
+                base_address = range.base_address + range.length;
+            } else {
+                break;
+            }
+        }
+    }
+
+    if let Some(types_ref) = types {
+        *types_ref = local_types;
+    }
+
+    type_count
+}
+
+/**
+  Calculate the least MTRR number from vertex Start to Stop and update
+  the Previous of all vertices from Start to Stop is updated to reflect
+  how the memory range is covered by MTRR.
+
+  @param VertexCount     The count of vertices in the graph.
+  @param Vertices        Array holding all vertices.
+  @param Weight          2-dimention array holding weights between vertices.
+  @param Start           Start vertex.
+  @param Stop            Stop vertex.
+  @param IncludeOptional TRUE to count the optional weight.
+**/
+fn mtrr_lib_calculate_least_mtrrs(
+    vertex_count: u16,
+    vertices: &mut [MtrrLibAddress], // Array of vertices
+    weight: &[u8],                   // Array of weights
+    start: u16,
+    stop: u16,
+    include_optional: bool,
+) {
+    let mut min_weight: u8;
+    let mut min_i: u16;
+    let mut mandatory: u8;
+    let mut optional: u8;
+
+    const MAX_WEIGHT: u8 = 0xFF;
+
+    // Initialize vertices and weights
+    for index in start..=stop {
+        vertices[index as usize].visited = false;
+        mandatory = weight[M(start, index, vertex_count)];
+        vertices[index as usize].weight = mandatory;
+        if mandatory != MAX_WEIGHT {
+            optional = if include_optional { weight[O(start, index, vertex_count)] } else { 0 };
+            vertices[index as usize].weight += optional;
+            assert!(vertices[index as usize].weight >= optional);
+        }
+    }
+
+    min_i = start;
+    min_weight = 0;
+
+    while !vertices[stop as usize].visited {
+        // Update the weight from the shortest vertex to other unvisited vertices
+        for index in (start + 1)..=stop {
+            if !vertices[index as usize].visited {
+                mandatory = weight[M(min_i, index, vertex_count)];
+                if mandatory != MAX_WEIGHT {
+                    optional = if include_optional { weight[O(min_i, index, vertex_count)] } else { 0 };
+                    if min_weight + mandatory + optional <= vertices[index as usize].weight {
+                        vertices[index as usize].weight = min_weight + mandatory + optional;
+                        vertices[index as usize].previous = min_i; // Previous is start-based
+                    }
+                }
+            }
+        }
+
+        // Find the shortest vertex from Start
+        min_i = vertex_count;
+        min_weight = MAX_WEIGHT;
+        for index in (start + 1)..=stop {
+            if !vertices[index as usize].visited && min_weight > vertices[index as usize].weight {
+                min_i = index;
+                min_weight = vertices[index as usize].weight;
+            }
+        }
+
+        // Mark the shortest vertex from Start as visited
+        vertices[min_i as usize].visited = true;
+    }
+}
+
+/**
+  Append the MTRR setting to MTRR setting array.
+
+  @param Mtrrs        Array holding all MTRR settings.
+  @param MtrrCapacity Capacity of the MTRR array.
+  @param MtrrCount    The count of MTRR settings in array.
+  @param BaseAddress  Base address.
+  @param Length       Length.
+  @param Type         Memory type.
+
+  @retval RETURN_SUCCESS          MTRR setting is appended to array.
+  @retval RETURN_OUT_OF_RESOURCES Array is full.
+**/
+fn mtrr_lib_append_variable_mtrr(
+    mtrrs: &mut [MtrrMemoryRange],
+    mtrr_capacity: usize,
+    mtrr_count: &mut usize,
+    base_address: u64,
+    length: u64,
+    mem_type: MtrrMemoryCacheType,
+) -> ReturnStatus {
+    if *mtrr_count == mtrr_capacity {
+        return RETURN_OUT_OF_RESOURCES;
+    }
+
+    mtrrs[*mtrr_count].base_address = base_address;
+    mtrrs[*mtrr_count].length = length;
+    mtrrs[*mtrr_count].mem_type = mem_type;
+    *mtrr_count += 1;
+
+    RETURN_SUCCESS
+}
+
+/**
+  Return the memory type that has the least precedence.
+
+  @param TypeBits  Bit mask of memory type.
+
+  @retval  Memory type that has the least precedence.
+**/
+fn mtrr_lib_lowest_type(mem_type_bits: u8) -> MtrrMemoryCacheType {
+    assert!(mem_type_bits != 0);
+    let mut mem_type = 7u8;
+    let mut mem_type_bits = mem_type_bits as i8;
+    while mem_type_bits > 0 {
+        mem_type -= 1;
+        mem_type_bits <<= 1;
+    }
+
+    mem_type.into()
+}
+
+/**
+  Calculate the subtractive path from vertex Start to Stop.
+
+  @param DefaultType  Default memory type.
+  @param A0           Alignment to use when base address is 0.
+  @param Ranges       Array holding memory type settings for all memory regions.
+  @param RangeCount   The count of memory ranges the array holds.
+  @param VertexCount  The count of vertices in the graph.
+  @param Vertices     Array holding all vertices.
+  @param Weight       2-dimention array holding weights between vertices.
+  @param Start        Start vertex.
+  @param Stop         Stop vertex.
+  @param Types        Type bit mask of memory range from Start to Stop.
+  @param TypeCount    Number of different memory types from Start to Stop.
+  @param Mtrrs        Array holding all MTRR settings.
+  @param MtrrCapacity Capacity of the MTRR array.
+  @param MtrrCount    The count of MTRR settings in array.
+
+  @retval RETURN_SUCCESS          The subtractive path is calculated successfully.
+  @retval RETURN_OUT_OF_RESOURCES The MTRR setting array is full.
+
+**/
+fn mtrr_lib_calculate_subtractive_path(
+    default_type: MtrrMemoryCacheType,
+    a0: u64,
+    ranges: &[MtrrMemoryRange],
+    range_count: usize,
+    vertex_count: u16,
+    vertices: &mut [MtrrLibAddress],
+    weight: &mut [u8],
+    start: u16,
+    stop: u16,
+    types: u8,
+    type_count: u8,
+    mtrrs: Option<&mut [MtrrMemoryRange]>,
+    mtrr_capacity: Option<usize>,
+    mtrr_count: Option<&mut usize>,
+) -> ReturnStatus {
+    const MAX_UINT64: u64 = 0xFFFFFFFFFFFFFFFFu64;
+
+    let mut base = vertices[start as usize].address;
+    let mut length = vertices[stop as usize].address - base;
+    let lowest_type = mtrr_lib_lowest_type(types);
+    // Clear the lowest type (highest bit) to get the precedent types
+    let precedent_types = !(1 << (lowest_type as u8)) & types;
+    let lowest_precedent_type = mtrr_lib_lowest_type(precedent_types);
+
+    if mtrrs.is_none() {
+        weight[M(start, stop, vertex_count)] = if lowest_type == default_type { 0 } else { 1 };
+        weight[O(start, stop, vertex_count)] = if lowest_type == default_type { 1 } else { 0 };
+    }
+
+    // Add all high level ranges
+    let mut hbase = MAX_UINT64;
+    let mut hlength = 0u64;
+
+    let mut mtrrs_unwrap = &mut [MtrrMemoryRange::default()][..];
+    let mut mtrr_count_unwrap = &mut 0;
+    let mtrrs_is_none = mtrrs.is_none();
+    if !mtrrs_is_none {
+        mtrrs_unwrap = mtrrs.unwrap();
+        mtrr_count_unwrap = mtrr_count.unwrap();
+    }
+
+    for index in 0..range_count {
+        if length == 0 {
             break;
         }
-    }
 
-    fn is_aligned(address: u32, alignment: u32) -> bool {
-        (address & (alignment - 1)) == 0
-    }
-
-    // check if the address is aligned with the fixed_ranges[min] alignment
-    if !is_aligned(address, fixed_ranges[min].size) {
-        return Err(MtrrError::UnalignedAddress);
-    }
-
-    // check if the address + length is aligned with the fixed_ranges[max - 1] alignment
-    if !is_aligned(address + length, fixed_ranges[max - 1].size) {
-        return Err(MtrrError::UnalignedMemoryRange);
-    }
-
-    // Find MTRR sub ranges
-    let mut i = min;
-    while i < max {
-        let base = fixed_ranges[i].base;
-        let next_base = fixed_ranges[i + 1].base;
-
-        // Each fixed MTRR is a 64 bit MSR. With in this 64 bit register, each
-        // byte(total 8 bytes) will represent the memory type for the sub range
-        // of memory as per the above table.
-
-        // So for the given memory range, we try to calculate the number of
-        // slots from the right that should not be touched(as they are outside
-        // the given memory range). This can occur if the given memory range do
-        // not start exactly at the MSR range.
-        let num_right_slots = address.abs_diff(base) / fixed_ranges[i].size;
-
-        // Then we also try to calculate the number of slots from the left that
-        // should not be touched(as they are outside the given memory range).
-        // This can occur if the given memory range do not fully occupy the
-        // entire MSR range.
-        let mut num_left_slots = 0;
-        if address + length < next_base {
-            num_left_slots = (address + length).abs_diff(next_base) / fixed_ranges[i].size;
+        if base < ranges[index].base_address || ranges[index].base_address + ranges[index].length <= base {
+            continue;
         }
 
-        // Read the current MSR and save it in to fixed ranges[i]
-        let mut mtrr_msr_value = unsafe { read_msr(fixed_ranges[i].mtrr_msr) };
-        fixed_ranges[i].mtrr_msr_value = mtrr_msr_value;
-
-        // Update the used memory slots of MTRR with mem type
-        for slot in num_right_slots..(8 - num_left_slots) {
-            mtrr_msr_value |= (mem_type as u64) << (8 * slot);
-        }
-
-        // If update is needed then store the value and mark it as such
-        if fixed_ranges[i].mtrr_msr_value != mtrr_msr_value {
-            fixed_ranges[i].mtrr_msr_value = mtrr_msr_value;
-            fixed_ranges[i].needs_update = true;
-        }
-
-        // Move to the next memory range
-        address = next_base;
-        i += 1;
-    }
-
-    // return the range of the fixed mtrr to be programmed
-    Ok((min as u32, max as u32))
-    // return the actual registers with the masks sets
-}
-
-fn range_starts_in(range: &MtrrRange, new_range: &MtrrRange) -> bool {
-    // check if start of the new range falls inside the current range
-    range.base_address <= new_range.base_address && new_range.base_address <= range.base_address + range.length - 1
-}
-
-fn range_ends_in(range: &MtrrRange, new_range: &MtrrRange) -> bool {
-    // check if end of the new range falls inside the current range
-    let new_range_end_address = new_range.base_address + new_range.length - 1;
-    range.base_address <= new_range_end_address && new_range_end_address <= range.base_address + range.length - 1
-}
-
-// This function takes a new range and tries to appropriately fit it in side
-// existing ranges, in the process, some of the existing ranges need to be
-// collapsed if the new range overlap them. And also, adding a new range might
-// lead to merging with neighbouring ranges matching with its memory type.
-//
-// case 1: new range completely fit/overlap an existing range(start == end)
-//      v------new range base
-// -----+------------+-----
-//      '▓▓▓▓▓▓▓▓▓▓▓▓'
-//      '▓▓▓▓▓▓▓▓▓▓▓▓'
-// -----+------------+-----
-//      ^---existing range base
-//
-// case 2: new range begins with an existing range(start == end)
-//      v------new range base
-// -----+-----.----+-----
-//      '▓▓▓▓▓'    +
-//      '▓▓▓▓▓'    +
-// -----+-----'----+-----
-//      ^---existing range base
-//
-// case 3: new range ends with an existing range(start == end)
-//            v------new range base
-// -----+-----.-----+-----
-//      +     '▓▓▓▓▓'
-//      +     '▓▓▓▓▓'
-// -----+-----'-----+-----
-//      ^---existing range base
-//
-// case 4: new range contains with in an existing range(start == end)
-//            v------new range base
-// -----+-----.-----.----+-----
-//      +     '▓▓▓▓▓'    +
-//      +     '▓▓▓▓▓'    +
-// -----+-----'-----'----+-----
-//      ^---existing range base
-//
-// case 5: new range overlaps with multiple existing ranges(start != end)
-//            v------new range base
-// -----+-----.----------+---------+---------+--.-------+-----
-//      +     '▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓'       +
-//      +     '▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓'       +
-// -----+-----'----------+---------+---------+--'-------+-----
-//      ^---existing start range base        ^---existing end range base
-//
-fn split_and_merge_ranges(ranges: &mut Vec<MtrrRange>, new_range: &MtrrRange, start: usize, mut end: usize) {
-    // case 5: collapse any intermediate ranges(not including the end range)
-    while start + 1 < end {
-        ranges[start].length += ranges[start + 1].length;
-        ranges.remove(start + 1);
-        end = end - 1;
-    }
-
-    // case 5: handling of end range is special if the mem type do not match
-    if start + 1 == end {
-        // mem type match to merge it
-        if ranges[start].mem_type == ranges[end].mem_type {
-            ranges[start].length += ranges[start + 1].length;
-            ranges.remove(start + 1);
+        // Base is in the Range[Index]
+        let sub_length = if base + length > ranges[index].base_address + ranges[index].length {
+            ranges[index].base_address + ranges[index].length - base
         } else {
-            // mem type do not match so split it accordingly.
-            // length of new range extending in to the end range
-            let length = new_range.base_address + new_range.length - ranges[end].base_address;
-            ranges[start].length += length;
-            ranges[end].base_address += length;
-            ranges[end].length -= length;
-        }
-    }
-
-    // we now have to deal with case 1-4.
-    let mut curr = start;
-    let left_length = new_range.base_address - ranges[curr].base_address;
-    let right_length = (ranges[curr].base_address + ranges[curr].length) - (new_range.base_address + new_range.length);
-
-    if left_length != 0 {
-        // create left range prior to the current range
-        let left_range =
-            MtrrRange { base_address: ranges[curr].base_address, length: left_length, mem_type: ranges[curr].mem_type };
-
-        ranges.insert(curr, left_range);
-        curr += 1;
-    }
-
-    if right_length != 0 {
-        // create right range next to the current range
-        let right_range = MtrrRange {
-            base_address: new_range.base_address + new_range.length,
-            length: right_length,
-            mem_type: ranges[curr].mem_type,
+            length
         };
 
-        ranges.insert(curr + 1, right_range);
-    }
+        if (1 << (ranges[index].mem_type as u8)) & precedent_types != 0 {
+            // Meet a range whose types take precedence.
+            // Update the [HBase, HBase + HLength) to include the range,
+            // [HBase, HBase + HLength) may contain sub ranges with 2 different types, and both take precedence.
+            if hbase == MAX_UINT64 {
+                hbase = base;
+            }
+            hlength += sub_length;
+        }
 
-    // adjust the current range
-    ranges[curr].base_address = new_range.base_address;
-    ranges[curr].length = ranges[curr].length - left_length - right_length;
-    ranges[curr].mem_type = new_range.mem_type;
+        base += sub_length;
+        length -= sub_length;
 
-    // Merge neighboring ranges if required.
+        if hlength == 0 {
+            continue;
+        }
 
-    // not the last range
-    if curr != ranges.len() - 1 {
-        let right = curr + 1;
-        if ranges[curr].mem_type == ranges[right].mem_type {
-            ranges[curr].length += ranges[right].length;
-            ranges.remove(right);
+        if ranges[index].mem_type == lowest_type || length == 0 {
+            // meet low type or end
+
+            // Add the MTRRs for each high priority type range
+            // the range[HBase, HBase + HLength) contains only two types.
+            // We might use positive or subtractive, depending on which way uses less MTRR
+            let mut sub_start = start;
+            while sub_start <= stop {
+                if vertices[sub_start as usize].address == hbase {
+                    break;
+                }
+                sub_start += 1;
+            }
+
+            let mut sub_stop = start;
+            while sub_stop <= stop {
+                if vertices[sub_stop as usize].address == hbase + hlength {
+                    break;
+                }
+                sub_stop += 1;
+            }
+
+            assert_eq!(vertices[sub_start as usize].address, hbase);
+            assert_eq!(vertices[sub_stop as usize].address, hbase + hlength);
+
+            if type_count == 2 || sub_start == sub_stop - 1 {
+                // add subtractive MTRRs for [HBase, HBase + HLength)
+                // [HBase, HBase + HLength) contains only one type.
+                // while - loop is to split the range to MTRR - compliant aligned range.
+
+                if mtrrs_is_none {
+                    weight[M(start, stop, vertex_count)] += (sub_stop - sub_start) as u8;
+                } else {
+                    while sub_start != sub_stop {
+                        let status = mtrr_lib_append_variable_mtrr(
+                            mtrrs_unwrap,
+                            mtrr_capacity.unwrap() as usize,
+                            mtrr_count_unwrap,
+                            vertices[sub_start as usize].address,
+                            vertices[sub_start as usize].length,
+                            vertices[sub_start as usize].mem_type.into(),
+                        );
+                        if return_error(status) {
+                            return status;
+                        }
+                        sub_start += 1;
+                    }
+                }
+            } else {
+                assert_eq!(type_count, 3);
+                mtrr_lib_calculate_least_mtrrs(vertex_count, vertices, weight, sub_start, sub_stop, true);
+
+                if mtrrs_is_none {
+                    weight[M(start, stop, vertex_count)] += vertices[sub_stop as usize].weight;
+                } else {
+                    // When we need to collect the optimal path from SubStart to SubStop
+                    while sub_stop != sub_start {
+                        let cur = sub_stop;
+                        let pre = vertices[cur as usize].previous;
+                        sub_stop = pre;
+
+                        if weight[M(pre, cur, vertex_count)] + weight[O(pre, cur, vertex_count)] != 0 {
+                            let status = mtrr_lib_append_variable_mtrr(
+                                mtrrs_unwrap,
+                                mtrr_capacity.unwrap(),
+                                mtrr_count_unwrap,
+                                vertices[pre as usize].address,
+                                vertices[cur as usize].address - vertices[pre as usize].address,
+                                if pre != cur - 1 {
+                                    lowest_precedent_type
+                                } else {
+                                    vertices[pre as usize].mem_type.into()
+                                },
+                            );
+                            if return_error(status) {
+                                return status;
+                            }
+                        }
+
+                        if pre != cur - 1 {
+                            let status = mtrr_lib_calculate_subtractive_path(
+                                default_type,
+                                a0,
+                                ranges,
+                                range_count,
+                                vertex_count,
+                                vertices,
+                                weight,
+                                pre,
+                                cur,
+                                precedent_types,
+                                2,
+                                Some(mtrrs_unwrap),
+                                mtrr_capacity,
+                                Some(mtrr_count_unwrap),
+                            );
+                            if return_error(status) {
+                                return status;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Reset HBase, HLength
+            hbase = MAX_UINT64;
+            hlength = 0;
         }
     }
 
-    // not the first range
-    if curr != 0 {
-        let left = curr - 1;
-        if ranges[left].mem_type == ranges[curr].mem_type {
-            ranges[left].length += ranges[curr].length;
-            ranges.remove(curr);
-        }
-    }
+    RETURN_SUCCESS
 }
 
-fn update_ranges(ranges: &mut Vec<MtrrRange>, new_range: &MtrrRange) {
-    let mut start = 0;
-    let mut end = 0;
-    for (i, range) in ranges.iter().enumerate() {
-        if range_starts_in(range, &new_range) {
-            start = i;
+/**
+  Calculate MTRR settings to cover the specified memory ranges.
+
+  @param DefaultType  Default memory type.
+  @param A0           Alignment to use when base address is 0.
+  @param Ranges       Memory range array holding the memory type
+                      settings for all memory address.
+  @param RangeCount   Count of memory ranges.
+  @param Scratch      A temporary scratch buffer that is used to perform the calculation.
+                      This is an optional parameter that may be NULL.
+  @param ScratchSize  Pointer to the size in bytes of the scratch buffer.
+                      It may be updated to the actual required size when the calculation
+                      needs more scratch buffer.
+  @param Mtrrs        Array holding all MTRR settings.
+  @param MtrrCapacity Capacity of the MTRR array.
+  @param MtrrCount    The count of MTRR settings in array.
+
+  @retval RETURN_SUCCESS          Variable MTRRs are allocated successfully.
+  @retval RETURN_OUT_OF_RESOURCES Count of variable MTRRs exceeds capacity.
+  @retval RETURN_BUFFER_TOO_SMALL The scratch buffer is too small for MTRR calculation.
+**/
+fn mtrr_lib_calculate_mtrrs(
+    default_type: MtrrMemoryCacheType,
+    a0: u64,
+    ranges: &[MtrrMemoryRange],
+    range_count: usize,
+    scratch: &mut [u8],
+    scratch_size: &mut usize,
+    mtrrs: &mut [MtrrMemoryRange],
+    mtrr_capacity: usize,
+    mtrr_count: &mut usize,
+) -> ReturnStatus {
+    const MAX_WEIGHT: u8 = 0xFF;
+    const MAX_UINT8: u8 = 0xFF;
+
+    let base0 = ranges[0].base_address;
+    let base1 = ranges[range_count - 1].base_address + ranges[range_count - 1].length;
+    assert!(base0 & !(base1 - 1) == base0);
+
+    // Counting the number of vertices
+    let mut vertices: &mut [MtrrLibAddress] = unsafe {
+        core::slice::from_raw_parts_mut(
+            scratch.as_mut_ptr() as *mut MtrrLibAddress,
+            scratch.len() / size_of::<MtrrLibAddress>(),
+        )
+    };
+    let mut vertex_index = 0;
+
+    for index in 0..range_count {
+        let mut base = ranges[index].base_address;
+        let mut length = ranges[index].length;
+
+        while length != 0 {
+            let alignment = mtrr_lib_biggest_alignment(base, a0);
+            let sub_length = if alignment > length { get_power_of_two_64(length) } else { alignment };
+
+            if vertex_index < *scratch_size / size_of::<MtrrLibAddress>() {
+                vertices[vertex_index] = MtrrLibAddress {
+                    address: base,
+                    alignment,
+                    mem_type: ranges[index].mem_type as u8,
+                    length: sub_length,
+                    previous: 0,
+                    weight: 0,
+                    visited: false,
+                };
+            }
+
+            base += sub_length;
+            length -= sub_length;
+            vertex_index += 1;
+        }
+    }
+
+    // Vertices[VertexIndex] = Base1, so whole vertex count is (VertexIndex + 1).
+    let vertex_count = vertex_index + 1;
+    let required_scratch_size = vertex_count * core::mem::size_of::<MtrrLibAddress>()
+        + vertex_count * vertex_count * core::mem::size_of::<u8>();
+    if *scratch_size < required_scratch_size {
+        *scratch_size = required_scratch_size;
+        return RETURN_BUFFER_TOO_SMALL;
+    }
+
+    vertices[vertex_count - 1].address = base1;
+
+    let weight: &mut [u8] = unsafe {
+        core::slice::from_raw_parts_mut(
+            vertices.as_mut_ptr().offset(vertex_count as isize) as *mut u8,
+            vertex_count * vertex_count,
+        )
+    };
+
+    for vertex_index in 0..vertex_count {
+        // Set optional weight between vertices and self->self to 0
+        unsafe {
+            write_bytes(&mut weight[M(vertex_index as u16, 0, vertex_count as u16)] as *mut u8, 0, vertex_index + 1)
+        };
+        // Set mandatory weight between vertices to MAX_WEIGHT
+        unsafe {
+            write_bytes(
+                &mut weight[M(vertex_index as u16, vertex_index as u16 + 1, vertex_count as u16)] as *mut u8,
+                MAX_WEIGHT,
+                vertex_count - vertex_index - 1,
+            )
+        };
+    }
+
+    // Set mandatory weight and optional weight for adjacent vertices
+    for vertex_index in 0..vertex_count - 1 {
+        if vertices[vertex_index].mem_type != default_type as u8 {
+            weight[M(vertex_index as u16, vertex_index as u16 + 1, vertex_count as u16)] = 1;
+            weight[O(vertex_index as u16, vertex_index as u16 + 1, vertex_count as u16)] = 0;
+        } else {
+            weight[M(vertex_index as u16, vertex_index as u16 + 1, vertex_count as u16)] = 0;
+            weight[O(vertex_index as u16, vertex_index as u16 + 1, vertex_count as u16)] = 1;
+        }
+    }
+
+    for type_count in 2..=3 {
+        for start in 0..(vertex_count as u32) {
+            for stop in (start + 2)..(vertex_count as u32) {
+                assert!(vertices[stop as usize].address > vertices[start as usize].address);
+
+                let length = vertices[stop as usize].address - vertices[start as usize].address;
+
+                if length > vertices[start as usize].alignment {
+                    // Pickup a new start when [Start, Stop) cannot be described by one MTRR.
+                    break;
+                }
+
+                if weight[M(start as u16, stop as u16, vertex_count as u16)] == MAX_WEIGHT && is_pow2(length) {
+                    let mut type_out = 0;
+
+                    if mtrr_lib_get_number_of_types(
+                        ranges,
+                        range_count,
+                        vertices[start as usize].address,
+                        vertices[stop as usize].address - vertices[start as usize].address,
+                        Some(&mut type_out),
+                    ) == type_count
+                    {
+                        // Update the Weight[Start, Stop] using subtractive path.
+                        mtrr_lib_calculate_subtractive_path(
+                            default_type,
+                            a0,
+                            ranges,
+                            range_count,
+                            vertex_count as u16,
+                            vertices,
+                            weight,
+                            start as u16,
+                            stop as u16,
+                            type_out,
+                            type_count,
+                            None,
+                            None,
+                            None,
+                        );
+                    } else if type_count == 2 {
+                        // Pick up a new start when we expect 2-type range, but 3-type range is met.
+                        // Because no matter how Stop is increased, we always meet 3-type range.
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    mtrr_lib_calculate_least_mtrrs(vertex_count as u16, &mut vertices, weight, 0, vertex_count as u16 - 1, false);
+    let mut stop = vertex_count as u16 - 1;
+
+    while stop != 0 {
+        let start = vertices[stop as usize].previous;
+        let mut type_count = MAX_UINT8;
+        let mut mem_type = 0;
+
+        if weight[M(start, stop, vertex_count as u16)] != 0 {
+            type_count = mtrr_lib_get_number_of_types(
+                ranges,
+                range_count,
+                vertices[start as usize].address,
+                vertices[stop as usize].address - vertices[start as usize].address,
+                Some(&mut mem_type),
+            );
+            let status_code = mtrr_lib_append_variable_mtrr(
+                mtrrs,
+                mtrr_capacity,
+                mtrr_count,
+                vertices[start as usize].address,
+                vertices[stop as usize].address - vertices[start as usize].address,
+                mtrr_lib_lowest_type(mem_type),
+            );
+            if return_error(status_code) {
+                break;
+            }
         }
 
-        if range_ends_in(range, &new_range) {
-            end = i;
-        }
-    }
+        if start != stop - 1 {
+            // subtractive path
+            if type_count == MAX_UINT8 {
+                type_count = mtrr_lib_get_number_of_types(
+                    ranges,
+                    range_count,
+                    vertices[start as usize].address,
+                    vertices[stop as usize].address - vertices[start as usize].address,
+                    Some(&mut mem_type),
+                );
+            }
 
-    split_and_merge_ranges(ranges, new_range, start, end);
-}
-
-fn main() {}
-
-#[cfg(test)]
-mod tests {
-    use crate::mtrr::MtrrMemoryType;
-
-    use super::{get_mtrr_fixed_ranges, mtrr_set_fixed_range_memory_attributes_internal, MtrrRange};
-    // --------------------------- Fixed Range Tests ------------------------
-    #[test]
-    fn test_non_overlapping_ranges() {
-        // MTRRfix64K_00000
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0x00000,
-                0x10000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((0, 1))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0x10000,
-                0x10000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((0, 1))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0x20000,
-                0x10000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((0, 1))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0x30000,
-                0x10000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((0, 1))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0x40000,
-                0x10000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((0, 1))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0x50000,
-                0x10000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((0, 1))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0x60000,
-                0x10000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((0, 1))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0x70000,
-                0x10000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((0, 1))
-        );
-
-        // MTRRfix16K_80000
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0x80000,
-                0x4000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((1, 2))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0x84000,
-                0x4000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((1, 2))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0x88000,
-                0x4000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((1, 2))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0x8C000,
-                0x4000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((1, 2))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0x90000,
-                0x4000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((1, 2))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0x94000,
-                0x4000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((1, 2))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0x98000,
-                0x4000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((1, 2))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0x9C000,
-                0x4000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((1, 2))
-        );
-
-        // MTRRfix16K_A0000
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xA0000,
-                0x4000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((2, 3))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xA4000,
-                0x4000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((2, 3))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xA8000,
-                0x4000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((2, 3))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xAC000,
-                0x4000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((2, 3))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xB0000,
-                0x4000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((2, 3))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xB4000,
-                0x4000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((2, 3))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xB8000,
-                0x4000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((2, 3))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xBC000,
-                0x4000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((2, 3))
-        );
-
-        // MTRRfix4K_C0000
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xC0000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((3, 4))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xC1000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((3, 4))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xC2000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((3, 4))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xC3000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((3, 4))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xC4000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((3, 4))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xC5000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((3, 4))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xC6000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((3, 4))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xC7000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((3, 4))
-        );
-
-        // MTRRfix4K_C8000
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xC8000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((4, 5))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xC9000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((4, 5))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xCA000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((4, 5))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xCB000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((4, 5))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xCC000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((4, 5))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xCD000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((4, 5))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xCE000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((4, 5))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xCF000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((4, 5))
-        );
-
-        // MTRRfix4K_D0000
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xD0000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((5, 6))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xD1000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((5, 6))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xD2000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((5, 6))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xD3000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((5, 6))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xD4000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((5, 6))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xD5000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((5, 6))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xD6000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((5, 6))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xD7000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((5, 6))
-        );
-
-        // MTRRfix4K_D8000
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xD8000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((6, 7))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xD9000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((6, 7))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xDA000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((6, 7))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xDB000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((6, 7))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xDC000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((6, 7))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xDD000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((6, 7))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xDE000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((6, 7))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xDF000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((6, 7))
-        );
-
-        // MTRRfix4K_E0000
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xE0000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((7, 8))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xE1000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((7, 8))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xE2000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((7, 8))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xE3000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((7, 8))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xE4000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((7, 8))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xE5000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((7, 8))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xE6000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((7, 8))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xE7000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((7, 8))
-        );
-
-        // MTRRfix4K_E8000
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xE8000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((8, 9))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xE9000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((8, 9))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xEA000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((8, 9))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xEB000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((8, 9))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xEC000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((8, 9))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xED000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((8, 9))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xEE000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((8, 9))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xEF000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((8, 9))
-        );
-
-        // MTRRfix4K_F0000
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xF0000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((9, 10))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xF1000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((9, 10))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xF2000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((9, 10))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xF3000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((9, 10))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xF4000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((9, 10))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xF5000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((9, 10))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xF6000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((9, 10))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xF7000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((9, 10))
-        );
-
-        // MTRRfix4K_F8000
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xF8000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((10, 11))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xF9000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((10, 11))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xFA000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((10, 11))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xFB000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((10, 11))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xFC000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((10, 11))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xFD000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((10, 11))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xFE000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((10, 11))
-        );
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xFF000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((10, 11))
-        );
-    }
-
-    #[test]
-    fn test_overlapping_but_with_in_single_fixed_mtr_range() {
-        // MTRRfix64K_00000
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0x00000,
-                0x10000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((0, 1))
-        );
-
-        // MTRRfix16K_80000
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0x80000,
-                0x4000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((1, 2))
-        );
-
-        // MTRRfix16K_A0000
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xA0000,
-                0x4000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((2, 3))
-        );
-
-        // MTRRfix4K_C0000
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xC0000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((3, 4))
-        );
-
-        // MTRRfix4K_C8000
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xC8000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((4, 5))
-        );
-
-        // MTRRfix4K_D0000
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xD0000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((5, 6))
-        );
-
-        // MTRRfix4K_D8000
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xD8000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((6, 7))
-        );
-
-        // MTRRfix4K_E0000
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xE0000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((7, 8))
-        );
-
-        // MTRRfix4K_E8000
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xE8000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((8, 9))
-        );
-
-        // MTRRfix4K_F0000
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xF0000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((9, 10))
-        );
-
-        // MTRRfix4K_F8000
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0xF8000,
-                0x1000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((10, 11))
-        );
-    }
-
-    #[test]
-    fn test_overlapping_full_fixed_mtr_range() {
-        // Full range
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0x00000,
-                0x100000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((0, 11))
-        );
-    }
-
-    #[test]
-    fn test_overlapping_partial_fixed_mtr_range() {
-        // MTRRfix64K_00000 + MTRRfix16K_80000
-        assert_eq!(
-            mtrr_set_fixed_range_memory_attributes_internal(
-                0x00000,
-                0x84000,
-                MtrrMemoryType::WriteBack,
-                &mut get_mtrr_fixed_ranges()
-            ),
-            Ok((0, 2))
-        );
-    }
-
-    #[test]
-    fn negative_test_length_zero() {
-        // MTRRfix64K_00000 + MTRRfix16K_80000
-
-        let res = mtrr_set_fixed_range_memory_attributes_internal(
-            0x80000,
-            0,
-            MtrrMemoryType::WriteBack,
-            &mut get_mtrr_fixed_ranges(),
-        );
-        assert!(res.is_err());
-    }
-
-    #[test]
-    fn negative_test_length_above_1mb() {
-        // length > 1mb
-        let res = mtrr_set_fixed_range_memory_attributes_internal(
-            0x00000,
-            0x200000,
-            MtrrMemoryType::WriteBack,
-            &mut get_mtrr_fixed_ranges(),
-        );
-        assert!(res.is_err());
-
-        // address + length > 1mb
-        let res = mtrr_set_fixed_range_memory_attributes_internal(
-            0x200000,
-            0x1,
-            MtrrMemoryType::WriteBack,
-            &mut get_mtrr_fixed_ranges(),
-        );
-        assert!(res.is_err());
-    }
-
-    // --------------------------- Fixed Range Tests ------------------------
-
-    use std::collections::HashSet;
-
-    use alloc::vec::Vec;
-    use rand::Rng;
-
-    use super::update_ranges;
-
-    const MAX: u64 = 0xffff_ffff_ffff_ffff;
-
-    fn get_random_mtrr_ranges(num_splits: usize) -> Vec<MtrrRange> {
-        let mut rng = rand::thread_rng();
-        let max_value = MAX;
-        let mut breakpoints = HashSet::new();
-
-        let mtrr_mem_type = [0u8, 1, 4, 5, 6];
-
-        while breakpoints.len() < num_splits - 1 {
-            breakpoints.insert(rng.gen_range(1..max_value));
-        }
-
-        let mut breakpoints: Vec<u64> = breakpoints.into_iter().collect();
-        breakpoints.sort_unstable();
-
-        let mut ranges = Vec::new();
-        let mut start = 0;
-
-        for &end in breakpoints.iter() {
-            ranges.push(MtrrRange::new(
+            let status_code = mtrr_lib_calculate_subtractive_path(
+                default_type,
+                a0,
+                ranges,
+                range_count,
+                vertex_count as u16,
+                &mut vertices,
+                weight,
                 start,
-                end - start,
-                mtrr_mem_type[rng.gen_range(0..mtrr_mem_type.len())].into(),
-            ));
-            start = end;
+                stop,
+                mem_type,
+                type_count,
+                Some(mtrrs),
+                Some(mtrr_capacity as usize),
+                Some(mtrr_count),
+            );
+            if return_error(status_code) {
+                break;
+            }
         }
 
-        ranges.push(MtrrRange::new(
-            start,
-            max_value - start,
-            mtrr_mem_type[rng.gen_range(0..mtrr_mem_type.len())].into(),
-        ));
-
-        ranges
+        stop = start;
     }
 
-    #[test]
-    fn test_update_ranges_overlapping() {
-        let mut ranges: Vec<MtrrRange> = get_random_mtrr_ranges(50);
+    RETURN_SUCCESS
+}
 
-        let mut rng = rand::thread_rng();
-        let base = rng.gen_range(0..10); // range can begin
-        let length = 0xffff_ffff_ffff_fff; // range is big to make it overlap
+/**
+  Apply the fixed MTRR settings to memory range array.
 
-        let range = MtrrRange::new(base, length, MtrrMemoryType::WriteBack);
+  @param Fixed             The fixed MTRR settings.
+  @param Ranges            Return the memory range array holding memory type
+                           settings for all memory address.
+  @param RangeCapacity     The capacity of memory range array.
+  @param RangeCount        Return the count of memory range.
 
-        for range in &ranges {
-            println!("{}", range);
+  @retval RETURN_SUCCESS          The memory range array is returned successfully.
+  @retval RETURN_OUT_OF_RESOURCES The count of memory ranges exceeds capacity.
+**/
+fn mtrr_lib_apply_fixed_mtrrs(
+    fixed: &MtrrFixedSettings,
+    ranges: &mut [MtrrMemoryRange],
+    range_capacity: usize,
+    range_count: &mut usize,
+) -> ReturnStatus {
+    let mut status: ReturnStatus;
+    let mut base: u64 = 0;
+
+    for msr_index in 0..MMTRR_LIB_FIXED_MTRR_TABLE.len() {
+        assert!(base == MMTRR_LIB_FIXED_MTRR_TABLE[msr_index].base_address as u64);
+
+        for index in 0..size_of::<u64>() {
+            let memory_type: MtrrMemoryCacheType = unsafe {
+                let mem_type = *(&fixed.mtrr[msr_index] as *const u64 as *const u8).add(index);
+                mem_type.into()
+            };
+
+            status = mtrr_lib_set_memory_type(
+                ranges,
+                range_capacity,
+                range_count,
+                base,
+                MMTRR_LIB_FIXED_MTRR_TABLE[msr_index].length as u64,
+                memory_type,
+            );
+
+            if status == RETURN_OUT_OF_RESOURCES {
+                return status;
+            }
+
+            base += MMTRR_LIB_FIXED_MTRR_TABLE[msr_index].length as u64;
         }
-
-        println!("-----------------");
-
-        println!("new range: {}", range);
-
-        println!("-----------------");
-
-        update_ranges(&mut ranges, &range);
-
-        let mut lengths = 0;
-
-        for range in ranges {
-            println!("{}", range);
-            lengths += range.length;
-        }
-
-        // we are good if the new ranges add up to the max
-        assert_eq!(lengths, MAX);
     }
 
-    #[test]
-    fn test_update_ranges_mostly_non_overlapping() {
-        let mut ranges: Vec<MtrrRange> = get_random_mtrr_ranges(50);
+    assert!(base == SIZE_1MB as u64);
+    RETURN_SUCCESS
+}
 
-        let mut rng = rand::thread_rng();
-        let base = rng.gen_range(0..MAX - 0xffff); // range can begin anywhere
-        let length = 0xffff; // and size is small
+/**
+  Apply the variable MTRR settings to memory range array.
 
-        let range = MtrrRange::new(base, length, MtrrMemoryType::WriteBack);
+  @param VariableMtrrRanges      The variable MTRR array.
+  @param VariableMtrrRangesCount The count of variable MTRRs.
+  @param Ranges            Return the memory range array with new MTRR settings applied.
+  @param RangeCapacity     The capacity of memory range array.
+  @param RangeCount        Return the count of memory range.
 
-        for range in &ranges {
-            println!("{}", range);
+  @retval RETURN_SUCCESS          The memory range array is returned successfully.
+  @retval RETURN_OUT_OF_RESOURCES The count of memory ranges exceeds capacity.
+**/
+fn mtrr_lib_apply_variable_mtrrs(
+    original_variable_mtrr_ranges: &[MtrrMemoryRange],
+    original_variable_mtrr_ranges_count: u32,
+    working_ranges: &mut [MtrrMemoryRange],
+    working_ranges_capacity: usize,
+    range_count: &mut usize,
+) -> ReturnStatus {
+    let mut status: ReturnStatus;
+
+    // 1. Set WB (Write Back)
+    for index in 0..original_variable_mtrr_ranges_count as usize {
+        let range = &original_variable_mtrr_ranges[index];
+        if range.length != 0 && range.mem_type == MtrrMemoryCacheType::WriteBack {
+            status = mtrr_lib_set_memory_type(
+                working_ranges,
+                working_ranges_capacity,
+                range_count,
+                range.base_address,
+                range.length,
+                range.mem_type,
+            );
+            if status == RETURN_OUT_OF_RESOURCES {
+                return status;
+            }
         }
-
-        println!("-----------------");
-
-        println!("new range: {}", range);
-
-        println!("-----------------");
-
-        update_ranges(&mut ranges, &range);
-
-        let mut lengths = 0;
-
-        for range in ranges {
-            println!("{}", range);
-            lengths += range.length;
-        }
-
-        // we are good if the new ranges add up to the max
-        assert_eq!(lengths, MAX);
     }
+
+    // 2. Set other types (non-WB and non-UC)
+    for index in 0..original_variable_mtrr_ranges_count as usize {
+        let range = &original_variable_mtrr_ranges[index];
+        if range.length != 0
+            && range.mem_type != MtrrMemoryCacheType::WriteBack
+            && range.mem_type != MtrrMemoryCacheType::Uncacheable
+        {
+            status = mtrr_lib_set_memory_type(
+                working_ranges,
+                working_ranges_capacity,
+                range_count,
+                range.base_address,
+                range.length,
+                range.mem_type,
+            );
+            if status == RETURN_OUT_OF_RESOURCES {
+                return status;
+            }
+        }
+    }
+
+    // 3. Set UC (Uncacheable)
+    for index in 0..original_variable_mtrr_ranges_count as usize {
+        let range = &original_variable_mtrr_ranges[index];
+        if range.length != 0 && range.mem_type == MtrrMemoryCacheType::Uncacheable {
+            status = mtrr_lib_set_memory_type(
+                working_ranges,
+                working_ranges_capacity,
+                range_count,
+                range.base_address,
+                range.length,
+                range.mem_type,
+            );
+            if status == RETURN_OUT_OF_RESOURCES {
+                return status;
+            }
+        }
+    }
+
+    RETURN_SUCCESS
+}
+
+/**
+  Return the memory type bit mask that's compatible to first type in the Ranges.
+
+  @param Ranges     Memory range array holding the memory type
+                    settings for all memory address.
+  @param RangeCount Count of memory ranges.
+
+  @return Compatible memory type bit mask.
+**/
+fn mtrr_lib_get_compatible_types(ranges: &[MtrrMemoryRange]) -> u8 {
+    assert!(!ranges.is_empty());
+
+    let mut i = 0;
+
+    while i < ranges.len() {
+        match ranges[i].mem_type {
+            MtrrMemoryCacheType::WriteBack | MtrrMemoryCacheType::WriteThrough => {
+                return (1 << MtrrMemoryCacheType::WriteBack as u8)
+                    | (1 << MtrrMemoryCacheType::WriteThrough as u8)
+                    | (1 << MtrrMemoryCacheType::Uncacheable as u8);
+            }
+
+            MtrrMemoryCacheType::WriteCombining | MtrrMemoryCacheType::WriteProtected => {
+                return (1 << ranges[i].mem_type as u8) | (1 << MtrrMemoryCacheType::Uncacheable as u8);
+            }
+
+            MtrrMemoryCacheType::Uncacheable => {
+                if ranges.len() == 1 {
+                    return 1 << MtrrMemoryCacheType::Uncacheable as u8;
+                }
+                i += 1;
+            }
+
+            MtrrMemoryCacheType::Invalid | _ => {
+                panic!("Invalid cache type");
+            }
+        }
+    }
+
+    // If all ranges are MtrrMemoryCacheType::Uncacheable
+    1 << MtrrMemoryCacheType::Uncacheable as u8
+}
+
+/**
+  Overwrite the destination MTRR settings with the source MTRR settings.
+  This routine is to make sure the modification to destination MTRR settings
+  is as small as possible.
+
+  @param DstMtrrs     Destination MTRR settings.
+  @param DstMtrrCount Count of destination MTRR settings.
+  @param SrcMtrrs     Source MTRR settings.
+  @param SrcMtrrCount Count of source MTRR settings.
+  @param Modified     Flag array to indicate which destination MTRR setting is modified.
+**/
+fn mtrr_lib_merge_variable_mtrr(
+    dst_mtrrs: &mut [MtrrMemoryRange],
+    dst_mtrr_count: usize,
+    src_mtrrs: &mut [MtrrMemoryRange],
+    src_mtrr_count: usize,
+    modified: &mut [bool],
+) {
+    assert!(src_mtrr_count <= dst_mtrr_count);
+
+    for dst_index in 0..dst_mtrr_count {
+        modified[dst_index] = false;
+
+        if dst_mtrrs[dst_index].length == 0 {
+            continue;
+        }
+
+        let mut src_index = 0;
+        while src_index < src_mtrr_count {
+            if dst_mtrrs[dst_index].base_address == src_mtrrs[src_index].base_address
+                && dst_mtrrs[dst_index].length == src_mtrrs[src_index].length
+                && dst_mtrrs[dst_index].mem_type == src_mtrrs[src_index].mem_type
+            {
+                break;
+            }
+            src_index += 1;
+        }
+
+        if src_index == src_mtrr_count {
+            // Remove the one from dst_mtrrs that is not in src_mtrrs
+            dst_mtrrs[dst_index].length = 0;
+            modified[dst_index] = true;
+        } else {
+            // Remove the one from src_mtrrs that is also in dst_mtrrs
+            src_mtrrs[src_index].length = 0;
+        }
+    }
+
+    // Now valid MTRR only exists in either dst_mtrrs or src_mtrrs.
+    // Merge MTRRs from src_mtrrs to dst_mtrrs
+    let mut dst_index = 0;
+    for src_index in 0..src_mtrr_count {
+        if src_mtrrs[src_index].length != 0 {
+            // Find the empty slot in dst_mtrrs
+            while dst_index < dst_mtrr_count {
+                if dst_mtrrs[dst_index].length == 0 {
+                    break;
+                }
+                dst_index += 1;
+            }
+
+            assert!(dst_index < dst_mtrr_count);
+            dst_mtrrs[dst_index] = src_mtrrs[src_index].clone();
+            modified[dst_index] = true;
+        }
+    }
+}
+
+/**
+  Calculate the variable MTRR settings for all memory ranges.
+
+  @param DefaultType          Default memory type.
+  @param A0                   Alignment to use when base address is 0.
+  @param WorkingRanges               Memory range array holding the memory type
+                              settings for all memory address.
+  @param WorkingRangeCount           Count of memory ranges.
+  @param Scratch              Scratch buffer to be used in MTRR calculation.
+  @param ScratchSize          Pointer to the size of scratch buffer.
+  @param VariableMtrrRanges         Array holding all MTRR settings.
+  @param VariableMtrrCapacity Capacity of the MTRR array.
+  @param VariableMtrrRangesCount    The count of MTRR settings in array.
+
+  @retval RETURN_SUCCESS          Variable MTRRs are allocated successfully.
+  @retval RETURN_OUT_OF_RESOURCES Count of variable MTRRs exceeds capacity.
+  @retval RETURN_BUFFER_TOO_SMALL The scratch buffer is too small for MTRR calculation.
+                                  The required scratch buffer size is returned through ScratchSize.
+**/
+fn mtrr_lib_set_memory_ranges(
+    default_type: MtrrMemoryCacheType, // Assuming MTRR_MEMORY_CACHE_TYPE is an 8-bit enum
+    a0: u64,
+    working_ranges: &mut [MtrrMemoryRange],
+    working_range_count: usize,
+    scratch: &mut [u8],
+    scratch_size: &mut usize,
+    variable_mtrr_ranges: &mut [MtrrMemoryRange],
+    variable_mtrr_capacity: usize,
+    variable_mtrr_ranges_count: &mut usize,
+) -> ReturnStatus {
+    *variable_mtrr_ranges_count = 0;
+
+    let mut biggest_scratch_size = 0;
+
+    let mut index = 0;
+    while index < working_range_count {
+        let mut base0 = working_ranges[index].base_address;
+
+        while index < working_range_count {
+            assert!(working_ranges[index].base_address == base0);
+
+            let mut alignment = mtrr_lib_biggest_alignment(base0, a0);
+
+            while base0 + alignment <= working_ranges[index].base_address + working_ranges[index].length {
+                if biggest_scratch_size <= *scratch_size && working_ranges[index].mem_type != default_type {
+                    let status = mtrr_lib_append_variable_mtrr(
+                        variable_mtrr_ranges,
+                        variable_mtrr_capacity,
+                        variable_mtrr_ranges_count,
+                        base0,
+                        alignment,
+                        working_ranges[index].mem_type,
+                    );
+                    if return_error(status) {
+                        return status;
+                    }
+                }
+
+                base0 += alignment;
+                alignment = mtrr_lib_biggest_alignment(base0, a0);
+            }
+
+            working_ranges[index].length -= base0 - working_ranges[index].base_address;
+            working_ranges[index].base_address = base0;
+
+            if working_ranges[index].length != 0 {
+                break;
+            } else {
+                index += 1;
+            }
+        }
+
+        if index == working_range_count {
+            break;
+        }
+
+        let compatible_types = mtrr_lib_get_compatible_types(&working_ranges[index..working_range_count]);
+        let mut end = index;
+
+        while (end + 1) < working_range_count {
+            if (1 << working_ranges[end + 1].mem_type as u8 & compatible_types) == 0 {
+                break;
+            }
+            end += 1;
+        }
+
+        let alignment = mtrr_lib_biggest_alignment(base0, a0);
+        let length = get_power_of_two_64(working_ranges[end].base_address + working_ranges[end].length - base0);
+        let base1 = base0 + core::cmp::min(alignment, length);
+
+        // Base1 may not in WorkingRanges[End]. Update End to the range Base1 belongs to.
+        end = index;
+        while (end + 1) < working_range_count {
+            if base1 <= working_ranges[end + 1].base_address {
+                break;
+            }
+            end += 1;
+        }
+
+        let length = working_ranges[end].length;
+        working_ranges[end].length = base1 - working_ranges[end].base_address;
+
+        let mut actual_scratch_size = *scratch_size;
+        let mut status = mtrr_lib_calculate_mtrrs(
+            default_type,
+            a0,
+            &working_ranges[index..end + 1],
+            end + 1 - index,
+            scratch,
+            &mut actual_scratch_size,
+            variable_mtrr_ranges,
+            variable_mtrr_capacity,
+            variable_mtrr_ranges_count,
+        );
+
+        if status == RETURN_BUFFER_TOO_SMALL {
+            biggest_scratch_size = core::cmp::max(biggest_scratch_size, actual_scratch_size);
+            // Ignore this error, because we need to calculate the biggest
+            // scratch buffer size.
+
+            status = RETURN_SUCCESS;
+        }
+
+        if return_error(status) {
+            return status;
+        }
+
+        if length != working_ranges[end].length {
+            working_ranges[end].base_address = base1;
+            working_ranges[end].length = length - working_ranges[end].length;
+            index = end;
+        } else {
+            index = end + 1;
+        }
+    }
+
+    if *scratch_size < biggest_scratch_size {
+        *scratch_size = biggest_scratch_size;
+        return RETURN_BUFFER_TOO_SMALL;
+    }
+
+    RETURN_SUCCESS
+}
+
+/**
+  Set the below-1MB memory attribute to fixed MTRR buffer.
+  Modified flag array indicates which fixed MTRR is modified.
+
+  @param [in, out] ClearMasks    The bits (when set) to clear in the fixed MTRR MSR.
+  @param [in, out] OrMasks       The bits to set in the fixed MTRR MSR.
+  @param [in]      BaseAddress   Base address.
+  @param [in]      Length        Length.
+  @param [in]      Type          Memory type.
+
+  @retval RETURN_SUCCESS      The memory attribute is set successfully.
+  @retval RETURN_UNSUPPORTED  The requested range or cache type was invalid
+                              for the fixed MTRRs.
+**/
+fn mtrr_lib_set_below_1mb_memory_attribute(
+    clear_masks: &mut [u64],
+    or_masks: &mut [u64],
+    mut base_address: u64,
+    mut length: u64,
+    mem_type: MtrrMemoryCacheType,
+) -> ReturnStatus {
+    let mut msr_index: u32;
+    let mut clear_mask: u64 = 0;
+    let mut or_mask: u64 = 0;
+
+    assert!(base_address < SIZE_1MB as u64);
+
+    msr_index = u32::MAX;
+
+    while base_address < SIZE_1MB as u64 && length != 0 {
+        let status = mtrr_lib_program_fixed_mtrr(
+            mem_type as u8,
+            &mut base_address,
+            &mut length,
+            &mut msr_index,
+            &mut clear_mask,
+            &mut or_mask,
+        );
+
+        if return_error(status) {
+            return status;
+        }
+
+        clear_masks[msr_index as usize] |= clear_mask;
+        or_masks[msr_index as usize] = (or_masks[msr_index as usize] & !clear_mask) | or_mask;
+    }
+
+    RETURN_SUCCESS
+}
+
+/**
+  This function attempts to set the attributes into MTRR setting buffer for multiple memory ranges.
+
+  @param[in, out]  MtrrSetting  MTRR setting buffer to be set.
+  @param[in]       Scratch      A temporary scratch buffer that is used to perform the calculation.
+  @param[in, out]  ScratchSize  Pointer to the size in bytes of the scratch buffer.
+                                It may be updated to the actual required size when the calculation
+                                needs more scratch buffer.
+  @param[in]       Ranges       Pointer to an array of MTRR_MEMORY_RANGE.
+                                When range overlap happens, the last one takes higher priority.
+                                When the function returns, either all the attributes are set successfully,
+                                or none of them is set.
+  @param[in]       WorkingRangeCount   Count of MTRR_MEMORY_RANGE.
+
+  @retval RETURN_SUCCESS            The attributes were set for all the memory ranges.
+  @retval RETURN_INVALID_PARAMETER  Length in any range is zero.
+  @retval RETURN_UNSUPPORTED        The processor does not support one or more bytes of the
+                                    memory resource range specified by BaseAddress and Length in any range.
+  @retval RETURN_UNSUPPORTED        The bit mask of attributes is not support for the memory resource
+                                    range specified by BaseAddress and Length in any range.
+  @retval RETURN_OUT_OF_RESOURCES   There are not enough system resources to modify the attributes of
+                                    the memory resource ranges.
+  @retval RETURN_ACCESS_DENIED      The attributes for the memory resource range specified by
+                                    BaseAddress and Length cannot be modified.
+  @retval RETURN_BUFFER_TOO_SMALL   The scratch buffer is too small for MTRR calculation.
+**/
+fn mtrr_set_memory_attributes_in_mtrr_settings(
+    mtrr_setting: Option<&mut MtrrSettings>,
+    scratch: &mut [u8],
+    scratch_size: &mut usize,
+    ranges: &[MtrrMemoryRange],
+    range_count: usize,
+) -> ReturnStatus {
+    let mut status = RETURN_SUCCESS;
+    let mut variable_mtrr_needed = false;
+    let mut modified: bool;
+    let mut base_address: u64;
+    let mut length: u64;
+
+    let mut mtrr_valid_bits_mask: u64 = 0;
+    let mut mtrr_valid_address_mask: u64 = 0;
+    let default_type: MtrrMemoryCacheType;
+    let mut variable_mtrr_settings = MtrrVariableSettings::default();
+    let mut working_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_WORKING_MTRR_RANGES] =
+        [MtrrMemoryRange::default(); MTRR_NUMBER_OF_WORKING_MTRR_RANGES];
+    let mut working_range_count: usize = 0;
+    let variable_setting = MtrrVariableSettings::default();
+    let mut original_variable_mtrr_ranges_count: u32 = 0;
+    let firmware_variable_mtrr_count: u32;
+    let mut working_variable_mtrr_ranges_count: usize = 0;
+    let mut original_variable_mtrr_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_VARIABLE_MTRR] = Default::default();
+    let mut working_variable_mtrr_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_VARIABLE_MTRR] = Default::default();
+    let mut variable_setting_modified: [bool; MTRR_NUMBER_OF_VARIABLE_MTRR] = [false; MTRR_NUMBER_OF_VARIABLE_MTRR];
+
+    let fixed_mtrr_memory_limit: u64;
+    let mut fixed_mtrr_supported: bool = false;
+    let mut clear_masks: [u64; 11] = [0; 11];
+    let mut or_masks: [u64; 11] = [0; 11];
+
+    let mut mtrr_context = MtrrContext::default();
+    let mut mtrr_context_valid = false;
+
+    // Initialize MTRR Mask
+    mtrr_lib_initialize_mtrr_mask(&mut mtrr_valid_bits_mask, &mut mtrr_valid_address_mask);
+
+    // Set memory attributes
+    variable_mtrr_needed = false;
+    original_variable_mtrr_ranges_count = 0;
+
+    // Dump the requests for debugging
+    // TODO: VINEEL Enable dumping
+    // debug!(
+    //     "Mtrr: Set Mem Attribute to {}, ScratchSize = {}{}",
+    //     if mtrr_setting.is_none() { "Hardware" } else { "Buffer" },
+    //     *scratch_size,
+    //     if range_count <= 1 { "," } else { "\n" }
+    // );
+    // for index in 0..range_count {
+    //     debug!(
+    //         " {}: [{:016x}, {:016x})\n",
+    //         m_mtrr_memory_cache_type_short_name[min(ranges[index].mem_type, CacheInvalid)],
+    //         ranges[index].base_address,
+    //         ranges[index].base_address + ranges[index].length
+    //     );
+    // }
+
+    // 1. Validate the parameters
+    if !mtrr_lib_is_mtrr_supported(Some(&mut fixed_mtrr_supported), Some(&mut original_variable_mtrr_ranges_count)) {
+        return RETURN_UNSUPPORTED;
+    }
+
+    fixed_mtrr_memory_limit = if fixed_mtrr_supported { SIZE_1MB as u64 } else { 0 };
+
+    for index in 0..range_count {
+        if ranges[index].length == 0 {
+            return RETURN_INVALID_PARAMETER;
+        }
+
+        if (ranges[index].base_address & !mtrr_valid_address_mask) != 0
+            || ((ranges[index].base_address + ranges[index].length) & !mtrr_valid_address_mask) != 0
+                && (ranges[index].base_address + ranges[index].length) != mtrr_valid_bits_mask + 1
+        {
+            return RETURN_UNSUPPORTED;
+        }
+
+        if !matches!(
+            ranges[index].mem_type,
+            MtrrMemoryCacheType::Uncacheable
+                | MtrrMemoryCacheType::WriteCombining
+                | MtrrMemoryCacheType::WriteThrough
+                | MtrrMemoryCacheType::WriteProtected
+                | MtrrMemoryCacheType::WriteBack
+        ) {
+            return RETURN_INVALID_PARAMETER;
+        }
+
+        if ranges[index].base_address + ranges[index].length > fixed_mtrr_memory_limit {
+            variable_mtrr_needed = true;
+        }
+    }
+
+    // 2. Apply the above-1MB memory attribute settings
+    if variable_mtrr_needed {
+        // 2.1. Read all variable MTRRs and convert to Ranges.
+        mtrr_get_variable_mtrr_worker(
+            mtrr_setting.as_deref(),
+            original_variable_mtrr_ranges_count,
+            &mut variable_mtrr_settings,
+        );
+        mtrr_lib_get_raw_variable_ranges(
+            &variable_mtrr_settings,
+            original_variable_mtrr_ranges_count as usize,
+            mtrr_valid_bits_mask,
+            mtrr_valid_address_mask,
+            &mut original_variable_mtrr_ranges,
+        );
+
+        default_type = mtrr_get_default_memory_type_worker(mtrr_setting.as_deref());
+        working_range_count = 1;
+        working_ranges[0].base_address = 0;
+        working_ranges[0].length = mtrr_valid_bits_mask + 1;
+        working_ranges[0].mem_type = default_type;
+
+        status = mtrr_lib_apply_variable_mtrrs(
+            &original_variable_mtrr_ranges,
+            original_variable_mtrr_ranges_count,
+            &mut working_ranges,
+            MTRR_NUMBER_OF_WORKING_MTRR_RANGES,
+            &mut working_range_count,
+        );
+
+        if return_error(status) {
+            return status;
+        }
+
+        firmware_variable_mtrr_count =
+            original_variable_mtrr_ranges_count - get_pcd_cpu_number_of_reserved_variable_mtrrs();
+        assert!(working_range_count <= 2 * firmware_variable_mtrr_count as usize + 1);
+
+        // 2.2. Force [0, 1M) to UC, so that it doesn't impact subtraction algorithm.
+
+        if fixed_mtrr_memory_limit != 0 {
+            status = mtrr_lib_set_memory_type(
+                &mut working_ranges,
+                MTRR_NUMBER_OF_WORKING_MTRR_RANGES,
+                &mut working_range_count,
+                0,
+                fixed_mtrr_memory_limit,
+                MtrrMemoryCacheType::Uncacheable,
+            );
+            assert!(status != RETURN_OUT_OF_RESOURCES);
+        }
+
+        // 2.3. Apply the new memory attribute settings to Ranges.
+
+        modified = false;
+        for index in 0..range_count {
+            base_address = ranges[index].base_address;
+            length = ranges[index].length;
+            if base_address < fixed_mtrr_memory_limit {
+                if length <= fixed_mtrr_memory_limit - base_address {
+                    continue;
+                }
+
+                length -= fixed_mtrr_memory_limit - base_address;
+                base_address = fixed_mtrr_memory_limit;
+            }
+
+            status = mtrr_lib_set_memory_type(
+                &mut working_ranges,
+                MTRR_NUMBER_OF_WORKING_MTRR_RANGES,
+                &mut working_range_count,
+                base_address,
+                length,
+                ranges[index].mem_type,
+            );
+            if status == RETURN_ALREADY_STARTED {
+                status = RETURN_SUCCESS;
+            } else if status == RETURN_OUT_OF_RESOURCES {
+                return status;
+            } else {
+                if return_error(status) {
+                    return status;
+                }
+                modified = true;
+            }
+        }
+
+        if modified {
+            // 2.4. Calculate the Variable MTRR settings based on the Ranges.
+            //      Buffer Too Small may be returned if the scratch buffer size is insufficient.
+            status = mtrr_lib_set_memory_ranges(
+                default_type,
+                1 << high_bit_set_64(mtrr_valid_bits_mask),
+                &mut working_ranges,
+                working_range_count,
+                scratch,
+                scratch_size,
+                &mut working_variable_mtrr_ranges,
+                (firmware_variable_mtrr_count + 1) as usize,
+                &mut working_variable_mtrr_ranges_count,
+            );
+            if return_error(status) {
+                return status;
+            }
+
+            // 2.5. Remove the [0, 1MB) MTRR if it still exists (not merged with other range)
+            for index in 0..working_variable_mtrr_ranges_count as usize {
+                if working_variable_mtrr_ranges[index].base_address == 0
+                    && working_variable_mtrr_ranges[index].length == fixed_mtrr_memory_limit
+                {
+                    assert!(working_variable_mtrr_ranges[index].mem_type == MtrrMemoryCacheType::Uncacheable);
+                    working_variable_mtrr_ranges_count -= 1;
+
+                    for i in 0..(working_variable_mtrr_ranges_count - index) {
+                        working_variable_mtrr_ranges[i + index] = working_variable_mtrr_ranges[i + index + 1].clone();
+                    }
+
+                    break;
+                }
+            }
+
+            if working_variable_mtrr_ranges_count > firmware_variable_mtrr_count as usize {
+                return RETURN_OUT_OF_RESOURCES;
+            }
+
+            // 2.6. Merge the WorkingVariableMtrrRanges to OriginalVariableMtrrRanges
+            //      Make sure least modification is made to OriginalVariableMtrrRanges.
+            mtrr_lib_merge_variable_mtrr(
+                &mut original_variable_mtrr_ranges,
+                original_variable_mtrr_ranges_count as usize,
+                &mut working_variable_mtrr_ranges,
+                working_variable_mtrr_ranges_count,
+                &mut variable_setting_modified,
+            );
+        }
+    }
+
+    // 3. Apply the below-1MB memory attribute settings
+    clear_masks.fill(0);
+    or_masks.fill(0);
+    for index in 0..range_count {
+        if ranges[index].base_address >= fixed_mtrr_memory_limit {
+            continue;
+        }
+
+        status = mtrr_lib_set_below_1mb_memory_attribute(
+            &mut clear_masks,
+            &mut or_masks,
+            ranges[index].base_address,
+            ranges[index].length,
+            ranges[index].mem_type,
+        );
+        if return_error(status) {
+            return status;
+        }
+    }
+
+    let mut mtrr_setting_unwrap = &mut MtrrSettings::default();
+    let mtrr_setting_is_some = mtrr_setting.is_some();
+    if !mtrr_setting_is_some {
+        mtrr_setting_unwrap = mtrr_setting.unwrap();
+    }
+
+    // 4. Write fixed MTRRs that have been modified
+    for (index, &clear_mask) in clear_masks.iter().enumerate() {
+        if clear_mask != 0 {
+            if mtrr_setting_is_some {
+                // Fixed MTRR is modified, enable fixed MTRR
+                let mut mtrr_def_type = MsrIa32MtrrDefType::from_bits(mtrr_setting_unwrap.mtrr_def_type);
+                mtrr_def_type.set_fe(true);
+                mtrr_setting_unwrap.mtrr_def_type = mtrr_def_type.into_bits();
+                mtrr_setting_unwrap.fixed.mtrr[index] =
+                    (mtrr_setting_unwrap.fixed.mtrr[index] & !clear_mask) | or_masks[index];
+            } else {
+                if !mtrr_context_valid {
+                    mtrr_lib_pre_mtrr_change(&mut mtrr_context);
+                    mtrr_context.def_type.set_fe(true);
+                    mtrr_context_valid = true;
+                }
+
+                asm_msr_and_then_or_64(MMTRR_LIB_FIXED_MTRR_TABLE[index].msr, !clear_mask, or_masks[index]);
+            }
+        }
+    }
+
+    // 5. Write variable MTRRs that have been modified
+    for index in 0..original_variable_mtrr_ranges_count as usize {
+        if variable_setting_modified[index] {
+            let variable_setting = if original_variable_mtrr_ranges[index].length != 0 {
+                let base = (original_variable_mtrr_ranges[index].base_address & mtrr_valid_address_mask)
+                    | (original_variable_mtrr_ranges[index].mem_type as u64);
+                let mask = ((!(original_variable_mtrr_ranges[index].length - 1)) & mtrr_valid_address_mask) | BIT11;
+
+                MtrrVariableSetting { base, mask }
+            } else {
+                MtrrVariableSetting { base: 0, mask: 0 }
+            };
+
+            if mtrr_setting_is_some {
+                mtrr_setting_unwrap.variables.mtrr[index] = variable_setting;
+            } else {
+                if !mtrr_context_valid {
+                    mtrr_lib_pre_mtrr_change(&mut mtrr_context);
+                    mtrr_context_valid = true;
+                }
+
+                asm_write_msr64(MSR_IA32_MTRR_PHYSBASE0 + (index as u32 * 2), variable_setting.base);
+                asm_write_msr64(MSR_IA32_MTRR_PHYSMASK0 + (index as u32 * 2), variable_setting.mask);
+            }
+        }
+    }
+
+    if mtrr_setting_is_some {
+        // Enable MTRR unconditionally
+        let mut mtrr_def_type = MsrIa32MtrrDefType::from_bits(mtrr_setting_unwrap.mtrr_def_type);
+        mtrr_def_type.set_e(true);
+        mtrr_setting_unwrap.mtrr_def_type = mtrr_def_type.into_bits();
+    } else if mtrr_context_valid {
+        mtrr_lib_post_mtrr_change(&mut mtrr_context);
+    }
+
+    // VINEEL: Fix error code path
+    mtrr_debug_print_all_mtrrs_worker(Some(mtrr_setting_unwrap));
+    // Exit and debug output
+    // Assuming Status is a placeholder for your actual return type
+    // Replace `Ok(())` with your actual logic for returning status
+    // println!("Result = {:?}", Status);
+
+    RETURN_SUCCESS
+}
+
+/**
+  This function attempts to set the attributes into MTRR setting buffer for a memory range.
+
+  @param[in, out]  MtrrSetting  MTRR setting buffer to be set.
+  @param[in]       BaseAddress  The physical address that is the start address
+                                of a memory range.
+  @param[in]       Length       The size in bytes of the memory range.
+  @param[in]       Attribute    The bit mask of attributes to set for the
+                                memory range.
+
+  @retval RETURN_SUCCESS            The attributes were set for the memory range.
+  @retval RETURN_INVALID_PARAMETER  Length is zero.
+  @retval RETURN_UNSUPPORTED        The processor does not support one or more bytes of the
+                                    memory resource range specified by BaseAddress and Length.
+  @retval RETURN_UNSUPPORTED        The bit mask of attributes is not support for the memory resource
+                                    range specified by BaseAddress and Length.
+  @retval RETURN_ACCESS_DENIED      The attributes for the memory resource range specified by
+                                    BaseAddress and Length cannot be modified.
+  @retval RETURN_OUT_OF_RESOURCES   There are not enough system resources to modify the attributes of
+                                    the memory resource range.
+                                    Multiple memory range attributes setting by calling this API multiple
+                                    times may fail with status RETURN_OUT_OF_RESOURCES. It may not mean
+                                    the number of CPU MTRRs are too small to set such memory attributes.
+                                    Pass the multiple memory range attributes to one call of
+                                    MtrrSetMemoryAttributesInMtrrSettings() may succeed.
+  @retval RETURN_BUFFER_TOO_SMALL   The fixed internal scratch buffer is too small for MTRR calculation.
+                                    Caller should use MtrrSetMemoryAttributesInMtrrSettings() to specify
+                                    external scratch buffer.
+**/
+pub fn mtrr_set_memory_attribute_in_mtrr_settings(
+    mtrr_setting: Option<&mut MtrrSettings>,
+    base_address: u64,
+    length: u64,
+    attribute: MtrrMemoryCacheType,
+) -> ReturnStatus {
+    let mut scratch: [u8; SCRATCH_BUFFER_SIZE] = [0; SCRATCH_BUFFER_SIZE];
+    let mut scratch_size = scratch.len();
+
+    let range = MtrrMemoryRange { base_address, length, mem_type: attribute };
+
+    mtrr_set_memory_attributes_in_mtrr_settings(mtrr_setting, &mut scratch, &mut scratch_size, &[range], 1)
+}
+
+/**
+  This function attempts to set the attributes for a memory range.
+
+  @param[in]  BaseAddress        The physical address that is the start
+                                 address of a memory range.
+  @param[in]  Length             The size in bytes of the memory range.
+  @param[in]  Attributes         The bit mask of attributes to set for the
+                                 memory range.
+
+  @retval RETURN_SUCCESS            The attributes were set for the memory
+                                    range.
+  @retval RETURN_INVALID_PARAMETER  Length is zero.
+  @retval RETURN_UNSUPPORTED        The processor does not support one or
+                                    more bytes of the memory resource range
+                                    specified by BaseAddress and Length.
+  @retval RETURN_UNSUPPORTED        The bit mask of attributes is not support
+                                    for the memory resource range specified
+                                    by BaseAddress and Length.
+  @retval RETURN_ACCESS_DENIED      The attributes for the memory resource
+                                    range specified by BaseAddress and Length
+                                    cannot be modified.
+  @retval RETURN_OUT_OF_RESOURCES   There are not enough system resources to
+                                    modify the attributes of the memory
+                                    resource range.
+                                    Multiple memory range attributes setting by calling this API multiple
+                                    times may fail with status RETURN_OUT_OF_RESOURCES. It may not mean
+                                    the number of CPU MTRRs are too small to set such memory attributes.
+                                    Pass the multiple memory range attributes to one call of
+                                    MtrrSetMemoryAttributesInMtrrSettings() may succeed.
+  @retval RETURN_BUFFER_TOO_SMALL   The fixed internal scratch buffer is too small for MTRR calculation.
+                                    Caller should use MtrrSetMemoryAttributesInMtrrSettings() to specify
+                                    external scratch buffer.
+**/
+pub fn mtrr_set_memory_attribute(base_address: u64, length: u64, attribute: MtrrMemoryCacheType) -> ReturnStatus {
+    mtrr_set_memory_attribute_in_mtrr_settings(None, base_address, length, attribute)
+}
+
+/**
+  Worker function setting variable MTRRs
+
+  @param[in]  VariableMtrrSettings   A buffer to hold variable MTRRs content.
+
+**/
+pub fn mtrr_set_variable_mtrr_worker(variable_mtrr_settings: &MtrrVariableSettings) {
+    let variable_mtrr_ranges_count = get_variable_mtrr_count_worker();
+    // assert!(variable_mtrr_ranges_count <= MTRR_NUMBER_OF_VARIABLE_MTRR);
+
+    for index in 0..variable_mtrr_ranges_count {
+        let base_msr = MSR_IA32_MTRR_PHYSBASE0 + (index << 1);
+        let mask_msr = MSR_IA32_MTRR_PHYSMASK0 + (index << 1);
+
+        asm_write_msr64(base_msr, variable_mtrr_settings.mtrr[index as usize].base);
+        asm_write_msr64(mask_msr, variable_mtrr_settings.mtrr[index as usize].mask);
+    }
+}
+
+/**
+  Worker function setting fixed MTRRs
+
+  @param[in]  FixedSettings  A buffer to hold fixed MTRRs content.
+
+**/
+pub fn mtrr_set_fixed_mtrr_worker(fixed_settings: &MtrrFixedSettings) {
+    for index in 0..MTRR_NUMBER_OF_FIXED_MTRR {
+        let msr = MMTRR_LIB_FIXED_MTRR_TABLE[index].msr;
+        let value = fixed_settings.mtrr[index];
+        asm_write_msr64(msr, value);
+    }
+}
+
+/**
+  This function gets the content in all MTRRs (variable and fixed)
+
+  @param[out]  MtrrSetting  A buffer to hold all MTRRs content.
+
+  @retval the pointer of MtrrSetting
+
+**/
+pub fn mtrr_get_all_mtrrs(mtrr_setting: &mut MtrrSettings) -> &mut MtrrSettings {
+    let mut fixed_mtrr_supported = false;
+    let mut variable_mtrr_ranges_count = 0;
+
+    // Initialize the MTRR settings
+    unsafe { core::ptr::write_bytes(mtrr_setting as *mut MtrrSettings, 0, core::mem::size_of::<MtrrSettings>()) };
+
+    // Check if MTRR is supported
+    if !mtrr_lib_is_mtrr_supported(Some(&mut fixed_mtrr_supported), Some(&mut variable_mtrr_ranges_count)) {
+        return mtrr_setting;
+    }
+
+    // Get MTRR_DEF_TYPE value
+    let mtrr_def_type = MsrIa32MtrrDefType::from_bits(asm_read_msr64(MSR_IA32_MTRR_DEF_TYPE));
+
+    // Assert that enabling the Fixed MTRR bit when unsupported is not allowed
+    assert!(fixed_mtrr_supported || !mtrr_def_type.fe());
+
+    mtrr_setting.mtrr_def_type = mtrr_def_type.into();
+
+    // Get fixed MTRRs if supported
+    if mtrr_def_type.fe() {
+        mtrr_get_fixed_mtrr_worker(&mut mtrr_setting.fixed);
+    }
+
+    // Get variable MTRRs
+    mtrr_get_variable_mtrr_worker(None, variable_mtrr_ranges_count, &mut mtrr_setting.variables);
+
+    mtrr_setting
+}
+
+/**
+  This function sets all MTRRs includes Variable and Fixed.
+
+  The behavior of this function is to program everything in MtrrSetting to hardware.
+  MTRRs might not be enabled because the enable bit is clear in MtrrSetting->MtrrDefType.
+
+  @param[in]  MtrrSetting  A buffer holding all MTRRs content.
+
+  @retval The pointer of MtrrSetting
+
+**/
+pub fn mtrr_set_all_mtrrs(mtrr_setting: &MtrrSettings) -> &MtrrSettings {
+    let mut fixed_mtrr_supported = false;
+    let mtrr_def_type = MsrIa32MtrrDefType::from_bits(mtrr_setting.mtrr_def_type);
+    let mut mtrr_context = MtrrContext::default();
+
+    let mut variable_mtrr_ranges_count = 0;
+
+    // Check if MTRR is supported
+    if !mtrr_lib_is_mtrr_supported(Some(&mut fixed_mtrr_supported), Some(&mut variable_mtrr_ranges_count)) {
+        return mtrr_setting;
+    }
+
+    // Prepare for MTRR change
+    mtrr_lib_pre_mtrr_change(&mut mtrr_context);
+
+    // Assert that enabling Fixed MTRR when unsupported is not allowed
+    assert!(fixed_mtrr_supported || !mtrr_def_type.fe());
+
+    // If hardware supports Fixed MTRR, set Fixed MTRRs
+    if fixed_mtrr_supported {
+        mtrr_set_fixed_mtrr_worker(&mtrr_setting.fixed);
+    }
+
+    // Set Variable MTRRs
+    mtrr_set_variable_mtrr_worker(&mtrr_setting.variables);
+
+    // Set MTRR_DEF_TYPE value
+    asm_write_msr64(MSR_IA32_MTRR_DEF_TYPE, mtrr_setting.mtrr_def_type);
+
+    // Finalize MTRR change and enable cache
+    mtrr_lib_post_mtrr_change_enable_cache(&mut mtrr_context);
+
+    mtrr_setting
+}
+
+/**
+  Checks if MTRR is supported.
+
+  @retval TRUE  MTRR is supported.
+  @retval FALSE MTRR is not supported.
+
+**/
+fn is_mtrr_supported() -> bool {
+    // Assuming the existence of the MtrrLibIsMtrrSupported function
+    let mut fixed_mtrr_supported = false;
+    let mut variable_mtrr_ranges_count = 0;
+
+    mtrr_lib_is_mtrr_supported(Some(&mut fixed_mtrr_supported), Some(&mut variable_mtrr_ranges_count))
+}
+
+/**
+  This function returns a Ranges array containing the memory cache types
+  of all memory addresses.
+
+  @param[in]      MtrrSetting  MTRR setting buffer to parse.
+  @param[out]     Ranges       Pointer to an array of MTRR_MEMORY_RANGE.
+  @param[in,out]  RangeCount   Count of MTRR_MEMORY_RANGE.
+                               On input, the maximum entries the Ranges can hold.
+                               On output, the actual entries that the function returns.
+
+  @retval RETURN_INVALID_PARAMETER RangeCount is NULL.
+  @retval RETURN_INVALID_PARAMETER *RangeCount is not 0 but Ranges is NULL.
+  @retval RETURN_BUFFER_TOO_SMALL  *RangeCount is too small.
+  @retval RETURN_SUCCESS           Ranges are successfully returned.
+**/
+pub fn mtrr_get_memory_attributes_in_mtrr_settings(
+    mtrr_setting: Option<&MtrrSettings>,
+    ranges: &mut [MtrrMemoryRange],
+    range_count: Option<&mut usize>,
+) -> ReturnStatus {
+    // Define the local structures and variables
+    let mut status = RETURN_SUCCESS;
+    let mut local_mtrrs = MtrrSettings::default();
+    let mtrrs: &MtrrSettings;
+    let mut raw_variable_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_VARIABLE_MTRR] = Default::default();
+    let mut local_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_LOCAL_MTRR_RANGES] =
+        [MtrrMemoryRange::default(); MTRR_NUMBER_OF_LOCAL_MTRR_RANGES];
+
+    let mut local_range_count = 1;
+    let (mut mtrr_valid_bits_mask, mut mtrr_valid_address_mask) = (0, 0);
+
+    // Validate parameters
+    if range_count.is_none() {
+        return RETURN_INVALID_PARAMETER;
+    }
+
+    let range_count = range_count.unwrap();
+
+    if *range_count != 0 && ranges.is_empty() {
+        return RETURN_INVALID_PARAMETER;
+    }
+
+    // Determine the MTRR settings to use
+    mtrrs = match mtrr_setting {
+        Some(settings) => settings,
+        None => {
+            mtrr_get_all_mtrrs(&mut local_mtrrs);
+            &local_mtrrs
+        }
+    };
+
+    // Initialize the MTRR masks
+    mtrr_lib_initialize_mtrr_mask(&mut mtrr_valid_bits_mask, &mut mtrr_valid_address_mask);
+    local_ranges[0] = MtrrMemoryRange { base_address: 0, length: mtrr_valid_bits_mask + 1, ..Default::default() };
+
+    let mtrr_def_type = MsrIa32MtrrDefType::from(mtrrs.mtrr_def_type);
+
+    if !mtrr_def_type.e() {
+        local_ranges[0].mem_type = MtrrMemoryCacheType::Uncacheable;
+    } else {
+        local_ranges[0].mem_type = mtrr_get_default_memory_type_worker(Some(mtrrs));
+
+        let variable_mtrr_ranges_count = get_variable_mtrr_count_worker();
+        assert!(variable_mtrr_ranges_count <= mtrr_setting.unwrap().variables.mtrr.len() as u32);
+
+        mtrr_lib_get_raw_variable_ranges(
+            &mtrrs.variables,
+            variable_mtrr_ranges_count as usize,
+            mtrr_valid_bits_mask,
+            mtrr_valid_address_mask,
+            &mut raw_variable_ranges,
+        );
+
+        status = mtrr_lib_apply_variable_mtrrs(
+            &raw_variable_ranges,
+            variable_mtrr_ranges_count,
+            &mut local_ranges,
+            MTRR_NUMBER_OF_LOCAL_MTRR_RANGES,
+            &mut local_range_count,
+        );
+
+        if status != RETURN_SUCCESS {
+            return status;
+        }
+
+        if mtrr_def_type.fe() {
+            mtrr_lib_apply_fixed_mtrrs(
+                &mtrrs.fixed,
+                &mut local_ranges,
+                MTRR_NUMBER_OF_LOCAL_MTRR_RANGES,
+                &mut local_range_count,
+            );
+        }
+    }
+
+    if *range_count < local_range_count {
+        *range_count = local_range_count;
+        return RETURN_BUFFER_TOO_SMALL;
+    }
+
+    ranges.copy_from_slice(&local_ranges[..local_range_count]);
+    *range_count = local_range_count;
+    RETURN_SUCCESS
+}
+
+/**
+  Worker function prints all MTRRs for debugging.
+
+  If MtrrSetting is not NULL, print MTRR settings from input MTRR
+  settings buffer.
+  If MtrrSetting is NULL, print MTRR settings from MTRRs.
+
+  @param  MtrrSetting    A buffer holding all MTRRs content.
+**/
+pub fn mtrr_debug_print_all_mtrrs_worker(mtrr_setting: Option<&MtrrSettings>) {
+    // Initialize local variables
+    let mut local_mtrrs = MtrrSettings::default();
+    let mtrrs: &MtrrSettings;
+    let status;
+    let mut range_count: usize;
+    let mut contain_variable_mtrr = false;
+
+    // Fixed-size arrays instead of vectors
+    let mut ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_LOCAL_MTRR_RANGES] =
+        [MtrrMemoryRange::default(); MTRR_NUMBER_OF_LOCAL_MTRR_RANGES];
+
+    // Determine which MTRR settings to use
+    mtrrs = match mtrr_setting {
+        Some(settings) => settings,
+        None => {
+            mtrr_get_all_mtrrs(&mut local_mtrrs);
+            &local_mtrrs
+        }
+    };
+
+    range_count = ranges.len();
+    status = mtrr_get_memory_attributes_in_mtrr_settings(Some(mtrrs), &mut ranges, Some(&mut range_count));
+
+    if status != RETURN_SUCCESS {
+        // println!("MTRR is not enabled.");
+        return;
+    }
+
+    // Dump RAW MTRR contents
+    // println!("MTRR Settings:");
+    // println!("=============");
+    // println!("MTRR Default Type: {:#016x}", mtrrs.mtrr_def_type);
+
+    for index in 0..MMTRR_LIB_FIXED_MTRR_TABLE.len() {
+        // println!("Fixed MTRR[{:02}]   : {:#016x}", index, mtrrs.fixed.mtrr[index]);
+    }
+
+    for index in 0..mtrrs.variables.mtrr.len() {
+        if mtrrs.variables.mtrr[index].mask & (1 << 11) == 0 {
+            // If mask is not valid, then do not display range
+            continue;
+        }
+
+        contain_variable_mtrr = true;
+        // println!(
+        //     "Variable MTRR[{:02}]: Base={:#016x} Mask={:#016x}",
+        //     index,
+        //     mtrrs.variables.mtrr[index].base,
+        //     mtrrs.variables.mtrr[index].mask
+        // );
+    }
+
+    if !contain_variable_mtrr {
+        // println!("Variable MTRR    : None.");
+    }
+
+    // println!();
+
+    // Dump MTRR setting in ranges
+    // println!("Memory Ranges:");
+    // println!("====================================");
+    for index in 0..range_count {
+        let cache_type_name = MMTRR_MEMORY_CACHE_TYPE_SHORT_NAME[ranges[index].mem_type as usize];
+        // println!(
+        //     "{}:{:#016x}-{:#016x}",
+        //     cache_type_name,
+        //     ranges[index].base_address,
+        //     ranges[index].base_address + ranges[index].length - 1
+        // );
+    }
+}
+
+/**
+  This function prints all MTRRs for debugging.
+**/
+pub fn mtrr_debug_print_all_mtrrs() {
+    mtrr_debug_print_all_mtrrs_worker(None);
 }
