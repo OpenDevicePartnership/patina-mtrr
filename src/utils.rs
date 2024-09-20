@@ -13,7 +13,12 @@ pub fn mult_u64x32(value: u64, multiplier: u32) -> u64 {
 
 pub fn get_power_of_two_64(value: u64) -> u64 {
     // Finds the highest power of two less than or equal to the value
-    value.next_power_of_two() / 2
+    // value.next_power_of_two() / 2
+    if value == 0 {
+        return 0;
+    }
+
+    1u64 << high_bit_set_64(value)
 }
 
 pub fn is_pow2(length: u64) -> bool {
@@ -59,14 +64,14 @@ pub fn high_bit_set_32(operand: u32) -> i32 {
         return -1; // No bits set
     }
 
-    let mut pos = 31;
+    let mut pos = 0;
     let mut value = operand;
 
     // Find the highest bit set
-    while value > 1 {
+    while value != 0 {
+        pos += 1;
         value >>= 1;
-        pos -= 1;
     }
 
-    pos
+    pos - 1
 }

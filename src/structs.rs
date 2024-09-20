@@ -1,3 +1,5 @@
+use core::fmt;
+
 use bitfield_struct::bitfield;
 
 // Firmware needs to reserve 2 MTRRs for OS.
@@ -94,6 +96,7 @@ pub struct FixedMtrr {
 
 // Structure to describe a variable MTRR
 #[repr(C)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct VariableMtrr {
     pub base_address: u64,
     pub length: u64,
@@ -105,7 +108,7 @@ pub struct VariableMtrr {
 
 // Structure to hold base and mask pair for variable MTRR register
 #[repr(C)]
-#[derive(Default)]
+#[derive(Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MtrrVariableSetting {
     pub base: u64,
     pub mask: u64,
@@ -113,25 +116,71 @@ pub struct MtrrVariableSetting {
 
 // Array for variable MTRRs
 #[repr(C)]
-#[derive(Default)]
+#[derive(Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MtrrVariableSettings {
     pub mtrr: [MtrrVariableSetting; MTRR_NUMBER_OF_VARIABLE_MTRR],
 }
 
 // Array for fixed MTRRs
 #[repr(C)]
-#[derive(Default)]
+#[derive(Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MtrrFixedSettings {
     pub mtrr: [u64; MTRR_NUMBER_OF_FIXED_MTRR],
 }
 
 // Structure to hold all MTRRs
 #[repr(C)]
-#[derive(Default)]
+#[derive(Default, PartialEq, Eq)]
 pub struct MtrrSettings {
     pub fixed: MtrrFixedSettings,
     pub variables: MtrrVariableSettings,
     pub mtrr_def_type: u64,
+}
+
+impl MtrrSettings {
+    pub fn new(fixed: MtrrFixedSettings, variables: MtrrVariableSettings, mtrr_def_type: u64) -> Self {
+        Self { fixed, variables, mtrr_def_type }
+    }
+}
+
+// Implement Display for MtrrVariableSetting
+impl fmt::Display for MtrrVariableSetting {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Base: {:#018x}, Mask: {:#018x}", self.base, self.mask)
+    }
+}
+
+// Implement Display for MtrrVariableSettings
+impl fmt::Display for MtrrVariableSettings {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut result = String::new();
+        for (i, mtrr) in self.mtrr.iter().enumerate() {
+            result.push_str(&format!("Variable MTRR[{}]: {}\n", i, mtrr));
+        }
+        write!(f, "{}", result)
+    }
+}
+
+// Implement Display for MtrrFixedSettings
+impl fmt::Display for MtrrFixedSettings {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut result = String::new();
+        for (i, mtrr) in self.mtrr.iter().enumerate() {
+            result.push_str(&format!("Fixed MTRR[{}]: {:#018x}\n", i, mtrr));
+        }
+        write!(f, "{}", result)
+    }
+}
+
+// Implement Display for MtrrSettings
+impl fmt::Display for MtrrSettings {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "MTRR Settings:\nFixed MTRRs:\n{}\nVariable MTRRs:\n{}\nMTRR Default Type: {:#018x}",
+            self.fixed, self.variables, self.mtrr_def_type
+        )
+    }
 }
 
 #[repr(u32)]
@@ -171,6 +220,12 @@ pub struct MtrrMemoryRange {
     pub base_address: u64,
     pub length: u64,
     pub mem_type: MtrrMemoryCacheType, // Use the MtrrMemoryCacheType enum.
+}
+
+impl MtrrMemoryRange {
+    pub fn new(base_address: u64, length: u64, mem_type: MtrrMemoryCacheType) -> Self {
+        Self { base_address, length, mem_type }
+    }
 }
 
 // Structure to save and restore MTRR context
@@ -229,30 +284,26 @@ pub struct MsrIa32MtrrDefType {
 #[bitfield(u64)]
 pub struct MsrIa32MtrrPhysbaseRegister {
     #[bits(8)]
-    pub mem_type: u8,      // [Bits 7:0] Type. Specifies memory type of the range.
+    pub mem_type: u8, // [Bits 7:0] Type. Specifies memory type of the range.
     #[bits(4)]
-    pub reserved1: u8,  // [Bits 11:8] Reserved.
+    pub reserved1: u8, // [Bits 11:8] Reserved.
     #[bits(40)]
-    pub phys_base: u64,  // [Bits 51:12] PhysBase. MTRR physical Base Address.
+    pub phys_base: u64, // [Bits 51:12] PhysBase. MTRR physical Base Address.
     #[bits(12)]
     pub reserved2: u32, // [Bits MAXPHYSADDR:32] PhysBase. Upper bits of MTRR physical Base Address.
 }
-
 
 #[bitfield(u64)]
 pub struct MsrIa32MtrrPhysmaskRegister {
     #[bits(11)]
-    pub reserved1: u16,      //
+    pub reserved1: u16, //
     #[bits(1)]
-    pub v: bool,  // [Bit 11] Valid Enable range mask.
+    pub v: bool, // [Bit 11] Valid Enable range mask.
     #[bits(40)]
-    pub phys_mask: u64,  // [Bits 51:12] PhysMask. MTRR physical Base Address.
+    pub phys_mask: u64, // [Bits 51:12] PhysMask. MTRR physical Base Address.
     #[bits(12)]
     pub reserved2: u32, // [Bits MAXPHYSADDR:32] PhysBase. Upper bits of MTRR physical Base Address.
 }
-
-
-
 
 /**
   CPUID Version Information returned in EDX for CPUID leaf

@@ -1,109 +1,15 @@
-use mtrr::structs::{MtrrSettings, CPUID_EXTENDED_FUNCTION, CPUID_SIGNATURE, CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS, CPUID_VERSION_INFO, CPUID_VIR_PHY_ADDRESS_SIZE};
 use mtrr::structs::{
     MsrIa32MtrrPhysbaseRegister, MsrIa32MtrrPhysmaskRegister, MtrrMemoryCacheType, MtrrMemoryRange,
-    MtrrVariableSetting, SIZE_1MB,
+    MtrrVariableSetting, MTRR_NUMBER_OF_FIXED_MTRR, MTRR_NUMBER_OF_VARIABLE_MTRR, SIZE_1MB,
+};
+use mtrr::structs::{
+    MtrrSettings, CPUID_EXTENDED_FUNCTION, CPUID_SIGNATURE, CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS,
+    CPUID_VERSION_INFO, CPUID_VIR_PHY_ADDRESS_SIZE,
 };
 
 use rand::random;
 use rand::Rng;
 use std::cmp::Ordering;
-
-use crate::MtrrLibSystemParameter;
-
-
-
-pub fn unit_test_mtrr_lib_asm_cpuid_ex(
-    index: u32,
-    sub_index: u32,
-    eax: Option<&mut u32>,
-    ebx: Option<&mut u32>,
-    ecx: Option<&mut u32>,
-    edx: Option<&mut u32>,
-) -> u32 {
-    match index {
-        CPUID_SIGNATURE => {
-            if let Some(eax) = eax {
-                *eax = CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS;
-            }
-            index
-        }
-        CPUID_VERSION_INFO => {
-            if let Some(edx) = edx {
-                *edx = m_cpuid_version_info_edx.uint32;
-            }
-            index
-        }
-        CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS => {
-            if let Some(ecx) = ecx {
-                *ecx = m_cpuid_extended_feature_flags_ecx.uint32;
-            }
-            index
-        }
-        CPUID_EXTENDED_FUNCTION => {
-            if let Some(eax) = eax {
-                *eax = CPUID_VIR_PHY_ADDRESS_SIZE;
-            }
-            index
-        }
-        CPUID_VIR_PHY_ADDRESS_SIZE => {
-            if let Some(eax) = eax {
-                *eax = m_cpuid_vir_phy_address_size_eax.uint32;
-            }
-            index
-        }
-        _ => {
-            panic!("Should never fall through to here");
-        }
-    }
-}
-
-// pub fn initialize_mtrr_regs(system_parameter: &MtrrLibSystemParameter) -> UnitTestStatus {
-//     for value in m_fixed_mtrrs_value.iter_mut() {
-//         *value = system_parameter.default_cache_type;
-//     }
-
-//     for index in 0..m_variable_mtrrs_phys_base.len() {
-//         m_variable_mtrrs_phys_base[index].uint64 = 0;
-//         m_variable_mtrrs_phys_mask[index].uint64 = 0;
-//     }
-
-//     m_def_type_msr.bits.e = 1;
-//     m_def_type_msr.bits.fe = 0;
-//     m_def_type_msr.bits.type_ = system_parameter.default_cache_type;
-//     m_def_type_msr.bits.reserved1 = 0;
-//     m_def_type_msr.bits.reserved2 = 0;
-//     m_def_type_msr.bits.reserved3 = 0;
-
-//     m_mtrr_cap_msr.bits.smrr = 0;
-//     m_mtrr_cap_msr.bits.wc = 0;
-//     m_mtrr_cap_msr.bits.vcnt = system_parameter.variable_mtrr_count;
-//     m_mtrr_cap_msr.bits.fix = system_parameter.fixed_mtrr_supported;
-//     m_mtrr_cap_msr.bits.reserved1 = 0;
-//     m_mtrr_cap_msr.bits.reserved2 = 0;
-//     m_mtrr_cap_msr.bits.reserved3 = 0;
-
-//     m_cpuid_version_info_edx.bits.mtrr = system_parameter.mtrr_supported;
-//     m_cpuid_vir_phy_address_size_eax.bits.physical_address_bits = system_parameter.physical_address_bits;
-
-//     // Hook BaseLib functions used by MtrrLib that require some emulation.
-//     g_unit_test_host_base_lib.x86.asm_cpuid = unit_test_mtrr_lib_asm_cpuid;
-//     g_unit_test_host_base_lib.x86.asm_cpuid_ex = unit_test_mtrr_lib_asm_cpuid_ex;
-
-//     g_unit_test_host_base_lib.x86.asm_read_msr64 = unit_test_mtrr_lib_asm_read_msr64;
-//     g_unit_test_host_base_lib.x86.asm_write_msr64 = unit_test_mtrr_lib_asm_write_msr64;
-
-//     if system_parameter.mk_tme_keyid_bits != 0 {
-//         m_cpuid_extended_feature_flags_ecx.bits.tme_en = 1;
-//         m_tme_activate_msr.bits.tme_enable = 1;
-//         m_tme_activate_msr.bits.mk_tme_keyid_bits = system_parameter.mk_tme_keyid_bits;
-//     } else {
-//         m_cpuid_extended_feature_flags_ecx.bits.tme_en = 0;
-//         m_tme_activate_msr.bits.tme_enable = 0;
-//         m_tme_activate_msr.bits.mk_tme_keyid_bits = 0;
-//     }
-
-//     UnitTestStatus::Passed
-// }
 
 // /**
 //   Initialize the MTRR registers.
@@ -130,22 +36,26 @@ pub fn collect_test_result(
     physical_address_bits: u32,
     variable_mtrr_count: u32,
     mtrrs: &MtrrSettings,
-    ranges: &mut Vec<MtrrMemoryRange>,
+    ranges: &mut [MtrrMemoryRange],
     range_count: &mut usize,
     mtrr_count: &mut u32,
 ) {
+    let mut raw_memory_ranges = [MtrrMemoryRange::default(); MTRR_NUMBER_OF_VARIABLE_MTRR];
     let mtrr_valid_bits_mask = (1u64 << physical_address_bits) - 1;
     let mtrr_valid_address_mask = mtrr_valid_bits_mask & !0xFFFu64;
-    let mut raw_memory_ranges = vec![MtrrMemoryRange::default(); mtrrs.variables.mtrr.len()];
 
     assert!(variable_mtrr_count <= mtrrs.variables.mtrr.len() as u32);
 
     *mtrr_count = 0;
     for index in 0..variable_mtrr_count as usize {
-        if mtrrs.variables.mtrr[index].mask.bits.v == 1 {
-            raw_memory_ranges[*mtrr_count as usize].base_address = mtrrs.variables.mtrr[index].base & mtrr_valid_address_mask;
-            raw_memory_ranges[*mtrr_count as usize].mem_type = mtrrs.variables.mtrr[index].base.bits.type_;
-            raw_memory_ranges[*mtrr_count as usize].length = (!mtrrs.variables.mtrr[index].mask & mtrr_valid_address_mask & mtrr_valid_bits_mask) + 1;
+        let mask = MsrIa32MtrrPhysmaskRegister::from_bits(mtrrs.variables.mtrr[index].mask);
+        if mask.v() {
+            let base = MsrIa32MtrrPhysbaseRegister::from_bits(mtrrs.variables.mtrr[index].base);
+            raw_memory_ranges[*mtrr_count as usize].base_address =
+                mtrrs.variables.mtrr[index].base & mtrr_valid_address_mask;
+            raw_memory_ranges[*mtrr_count as usize].mem_type = MtrrMemoryCacheType::from(base.mem_type());
+            raw_memory_ranges[*mtrr_count as usize].length =
+                (!mtrrs.variables.mtrr[index].mask & mtrr_valid_address_mask & mtrr_valid_bits_mask) + 1;
             *mtrr_count += 1;
         }
     }
@@ -182,41 +92,6 @@ pub fn random32(start: u32, limit: u32) -> u32 {
 pub fn random64(start: u64, limit: u64) -> u64 {
     let mut rng = rand::thread_rng();
     rng.gen_range(start..limit)
-}
-
-
-/**
-  Generate random count of MTRRs for each cache type.
-
-  @param TotalCount Total MTRR count.
-  @param UcCount    Return count of Uncacheable type.
-  @param WtCount    Return count of Write Through type.
-  @param WbCount    Return count of Write Back type.
-  @param WpCount    Return count of Write Protected type.
-  @param WcCount    Return count of Write Combining type.
-**/
-pub fn generate_random_memory_type_combination(
-    total_count: u32,
-    uc_count: &mut u32,
-    wt_count: &mut u32,
-    wb_count: &mut u32,
-    wp_count: &mut u32,
-    wc_count: &mut u32,
-) {
-    let mut count_per_type = [&mut *uc_count, &mut *wt_count, &mut *wb_count, &mut *wp_count, &mut *wc_count];
-
-    // Initialize the count of each cache type to 0
-    for count in count_per_type.iter_mut() {
-        **count = 0;
-    }
-
-    // Pick a random count of MTRRs
-    let total_mtrr_count = random::<u32>() % total_count + 1;
-    for _ in 0..total_mtrr_count {
-        // Pick a random cache type and increment its count
-        let cache_type_index = random::<usize>() % count_per_type.len();
-        *count_per_type[cache_type_index] += 1;
-    }
 }
 
 /**
@@ -653,7 +528,8 @@ pub fn compact_and_extend_effective_mtrr_memory_ranges(
             current_range_in_new_ranges.length = max_address - current_range_in_new_ranges.base_address + 1;
         } else {
             new_ranges[new_ranges_count_actual].base_address = old_last_range.base_address + old_last_range.length;
-            new_ranges[new_ranges_count_actual].length = max_address - new_ranges[new_ranges_count_actual].base_address + 1;
+            new_ranges[new_ranges_count_actual].length =
+                max_address - new_ranges[new_ranges_count_actual].base_address + 1;
             new_ranges[new_ranges_count_actual].mem_type = default_type;
             new_ranges_count_actual += 1;
         }
@@ -678,9 +554,11 @@ pub fn collect_endpoints(
 ) {
     assert_eq!(raw_memory_range_count << 1, endpoints.len());
 
-    for (index, raw_range_index) in (0..endpoints.len()).step_by(2).enumerate() {
+    for index in (0..endpoints.len()).step_by(2) {
+        let raw_range_index = index >> 1;
         endpoints[index] = raw_memory_ranges[raw_range_index].base_address;
-        endpoints[index + 1] = raw_memory_ranges[raw_range_index].base_address + raw_memory_ranges[raw_range_index].length - 1;
+        endpoints[index + 1] =
+            raw_memory_ranges[raw_range_index].base_address + raw_memory_ranges[raw_range_index].length - 1;
     }
 
     endpoints.sort_unstable();
@@ -702,7 +580,7 @@ pub fn get_effective_memory_ranges(
     physical_address_bits: u32,
     raw_memory_ranges: &[MtrrMemoryRange],
     raw_memory_range_count: usize,
-    memory_ranges: &mut Vec<MtrrMemoryRange>,
+    memory_ranges: &mut [MtrrMemoryRange],
     memory_range_count: &mut usize,
 ) {
     if raw_memory_range_count == 0 {
@@ -714,35 +592,53 @@ pub fn get_effective_memory_ranges(
     }
 
     let all_endpoints_count = raw_memory_range_count << 1;
-    let mut all_endpoints_inclusive = vec![0u64; all_endpoints_count];
+    let mut all_endpoints_inclusive: Vec<u64> = Vec::with_capacity(all_endpoints_count);
+    all_endpoints_inclusive.resize(all_endpoints_count, 0);
     let all_range_pieces_count_max = raw_memory_range_count * 3 + 1;
-    let mut all_range_pieces = vec![MtrrMemoryRange::default(); all_range_pieces_count_max];
+    let mut all_range_pieces: Vec<MtrrMemoryRange> = Vec::with_capacity(all_range_pieces_count_max);
+    all_range_pieces.resize(all_range_pieces_count_max, MtrrMemoryRange::default());
 
+    println!("all_endpoints_count: {} ", all_endpoints_count);
     collect_endpoints(&mut all_endpoints_inclusive, raw_memory_ranges, raw_memory_range_count);
+    println!("all_endpoints_inclusive.len(): {} ", all_endpoints_inclusive.len());
 
     let mut all_range_pieces_count_actual = 0;
-    for index in 0..all_endpoints_count - 1 {
-        let overlap_bit_flag1 = get_overlap_bit_flag(raw_memory_ranges, raw_memory_range_count as u32, all_endpoints_inclusive[index]);
-        let overlap_bit_flag2 = get_overlap_bit_flag(raw_memory_ranges, raw_memory_range_count as u32, all_endpoints_inclusive[index + 1]);
+    for index in 0..all_endpoints_inclusive.len() - 1 {
+        let overlap_bit_flag1 =
+            get_overlap_bit_flag(raw_memory_ranges, raw_memory_range_count as u32, all_endpoints_inclusive[index]);
+        let overlap_bit_flag2 =
+            get_overlap_bit_flag(raw_memory_ranges, raw_memory_range_count as u32, all_endpoints_inclusive[index + 1]);
         let overlap_flag_relation = check_overlap_bit_flags_relation(overlap_bit_flag1, overlap_bit_flag2);
+
+        println!(
+            "#### Index = {:x} OverlapBitFlag1 = {:x}, OverlapBitFlag2 = {:x}, OverlapFlagRelation = {:x} \n",
+            index, overlap_bit_flag1, overlap_bit_flag2, overlap_flag_relation
+        );
 
         match overlap_flag_relation {
             0 => {
                 all_range_pieces[all_range_pieces_count_actual].base_address = all_endpoints_inclusive[index];
-                all_range_pieces[all_range_pieces_count_actual].length = all_endpoints_inclusive[index + 1] - all_endpoints_inclusive[index] + 1;
+                all_range_pieces[all_range_pieces_count_actual].length =
+                    all_endpoints_inclusive[index + 1] - all_endpoints_inclusive[index] + 1;
                 all_range_pieces_count_actual += 1;
             }
             1 => {
                 all_range_pieces[all_range_pieces_count_actual].base_address = all_endpoints_inclusive[index];
-                all_range_pieces[all_range_pieces_count_actual].length = (all_endpoints_inclusive[index + 1] - 1) - all_endpoints_inclusive[index] + 1;
+                all_range_pieces[all_range_pieces_count_actual].length =
+                    (all_endpoints_inclusive[index + 1] - 1) - all_endpoints_inclusive[index] + 1;
                 all_range_pieces_count_actual += 1;
             }
             2 => {
                 all_range_pieces[all_range_pieces_count_actual].base_address = all_endpoints_inclusive[index] + 1;
-                all_range_pieces[all_range_pieces_count_actual].length = all_endpoints_inclusive[index + 1] - (all_endpoints_inclusive[index] + 1) + 1;
+                all_range_pieces[all_range_pieces_count_actual].length =
+                    all_endpoints_inclusive[index + 1] - (all_endpoints_inclusive[index] + 1) + 1;
                 all_range_pieces_count_actual += 1;
 
-                if !is_endpoint_in_ranges(all_endpoints_inclusive[index], &all_range_pieces, all_range_pieces_count_actual) {
+                if !is_endpoint_in_ranges(
+                    all_endpoints_inclusive[index],
+                    &all_range_pieces,
+                    all_range_pieces_count_actual,
+                ) {
                     all_range_pieces[all_range_pieces_count_actual].base_address = all_endpoints_inclusive[index];
                     all_range_pieces[all_range_pieces_count_actual].length = 1;
                     all_range_pieces_count_actual += 1;
@@ -750,13 +646,18 @@ pub fn get_effective_memory_ranges(
             }
             3 => {
                 all_range_pieces[all_range_pieces_count_actual].base_address = all_endpoints_inclusive[index] + 1;
-                all_range_pieces[all_range_pieces_count_actual].length = (all_endpoints_inclusive[index + 1] - 1) - (all_endpoints_inclusive[index] + 1) + 1;
+                all_range_pieces[all_range_pieces_count_actual].length =
+                    (all_endpoints_inclusive[index + 1] - 1) - (all_endpoints_inclusive[index] + 1) + 1;
                 if all_range_pieces[all_range_pieces_count_actual].length == 0 {
                     break;
                 }
                 all_range_pieces_count_actual += 1;
 
-                if !is_endpoint_in_ranges(all_endpoints_inclusive[index], &all_range_pieces, all_range_pieces_count_actual) {
+                if !is_endpoint_in_ranges(
+                    all_endpoints_inclusive[index],
+                    &all_range_pieces,
+                    all_range_pieces_count_actual,
+                ) {
                     all_range_pieces[all_range_pieces_count_actual].base_address = all_endpoints_inclusive[index];
                     all_range_pieces[all_range_pieces_count_actual].length = 1;
                     all_range_pieces_count_actual += 1;
@@ -767,12 +668,67 @@ pub fn get_effective_memory_ranges(
     }
 
     for index in 0..all_range_pieces_count_actual {
-        determine_memory_cache_type(default_type, &mut all_range_pieces[index], raw_memory_ranges, raw_memory_range_count as u32);
+        determine_memory_cache_type(
+            default_type,
+            &mut all_range_pieces[index],
+            raw_memory_ranges,
+            raw_memory_range_count as u32,
+        );
+    }
+    for i in 0..all_range_pieces_count_actual {
+        println!(
+            "#### AllRangePieces[{}] = {:x}, {:x}, {:?} \n",
+            i, all_range_pieces[i].base_address, all_range_pieces[i].length, all_range_pieces[i].mem_type
+        );
     }
 
-    compact_and_extend_effective_mtrr_memory_ranges(default_type, physical_address_bits, &mut all_range_pieces, &mut all_range_pieces_count_actual);
+    compact_and_extend_effective_mtrr_memory_ranges(
+        default_type,
+        physical_address_bits,
+        &mut all_range_pieces,
+        &mut all_range_pieces_count_actual,
+    );
+
+    println!("all_range_pieces_count_actual: {} ", all_range_pieces_count_actual);
+    for i in 0..all_range_pieces_count_actual {
+        println!(
+            "#### AllRangePieces[{}] = {:x}, {:x}, {:?} \n",
+            i, all_range_pieces[i].base_address, all_range_pieces[i].length, all_range_pieces[i].mem_type
+        );
+    }
+    println!("memory_range_count: {} ", *memory_range_count);
     assert!(*memory_range_count >= all_range_pieces_count_actual);
-    memory_ranges.clear();
-    memory_ranges.extend_from_slice(&all_range_pieces[..all_range_pieces_count_actual]);
+    for i in 0..all_range_pieces_count_actual {
+        memory_ranges[i] = all_range_pieces[i];
+    }
     *memory_range_count = all_range_pieces_count_actual;
+}
+
+#[test]
+fn unit_test_get_effective_memory_ranges() {
+    let default_type = MtrrMemoryCacheType::Uncacheable;
+    let physical_address_bits = 38;
+    let raw_memory_ranges = [
+        MtrrMemoryRange::new(0x3A0000000, 0x100000, MtrrMemoryCacheType::Uncacheable),
+        MtrrMemoryRange::new(0x1C60000000, 0x1000000, MtrrMemoryCacheType::WriteThrough),
+        MtrrMemoryRange::new(0x26A0000000, 0x100000, MtrrMemoryCacheType::WriteBack),
+    ];
+    let raw_memory_range_count = raw_memory_ranges.len();
+
+    let mut expected_memory_ranges = [MtrrMemoryRange::default();
+        MTRR_NUMBER_OF_FIXED_MTRR * std::mem::size_of::<u64>() + 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 1];
+    let mut expected_memory_ranges_count: usize = expected_memory_ranges.len();
+    get_effective_memory_ranges(
+        default_type,
+        physical_address_bits,
+        &raw_memory_ranges[..],
+        raw_memory_range_count,
+        &mut expected_memory_ranges,
+        &mut expected_memory_ranges_count,
+    );
+
+    for index in 0..expected_memory_ranges_count {
+        let range = &expected_memory_ranges[index];
+        println!("{:x} {:x} {:?}", range.base_address, range.length, range.mem_type)
+    }
 }
