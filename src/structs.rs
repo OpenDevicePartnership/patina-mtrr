@@ -22,17 +22,17 @@ pub const MAX_WEIGHT: u8 = u8::MAX; // MAX_UINT8 in C maps to u8::MAX in Rust
 pub const SCRATCH_BUFFER_SIZE: usize = 4 * SIZE_4KB as usize;
 
 // Fixed MTRR msr
-const MSR_IA32_MTRR_FIX64K_00000: u32 = 0x00000250;
-const MSR_IA32_MTRR_FIX16K_80000: u32 = 0x00000258;
-const MSR_IA32_MTRR_FIX16K_A0000: u32 = 0x00000259;
-const MSR_IA32_MTRR_FIX4K_C0000: u32 = 0x00000268;
-const MSR_IA32_MTRR_FIX4K_C8000: u32 = 0x00000269;
-const MSR_IA32_MTRR_FIX4K_D0000: u32 = 0x0000026A;
-const MSR_IA32_MTRR_FIX4K_D8000: u32 = 0x0000026B;
-const MSR_IA32_MTRR_FIX4K_E0000: u32 = 0x0000026C;
-const MSR_IA32_MTRR_FIX4K_E8000: u32 = 0x0000026D;
-const MSR_IA32_MTRR_FIX4K_F0000: u32 = 0x0000026E;
-const MSR_IA32_MTRR_FIX4K_F8000: u32 = 0x0000026F;
+pub const MSR_IA32_MTRR_FIX64K_00000: u32 = 0x00000250;
+pub const MSR_IA32_MTRR_FIX16K_80000: u32 = 0x00000258;
+pub const MSR_IA32_MTRR_FIX16K_A0000: u32 = 0x00000259;
+pub const MSR_IA32_MTRR_FIX4K_C0000: u32 = 0x00000268;
+pub const MSR_IA32_MTRR_FIX4K_C8000: u32 = 0x00000269;
+pub const MSR_IA32_MTRR_FIX4K_D0000: u32 = 0x0000026A;
+pub const MSR_IA32_MTRR_FIX4K_D8000: u32 = 0x0000026B;
+pub const MSR_IA32_MTRR_FIX4K_E0000: u32 = 0x0000026C;
+pub const MSR_IA32_MTRR_FIX4K_E8000: u32 = 0x0000026D;
+pub const MSR_IA32_MTRR_FIX4K_F0000: u32 = 0x0000026E;
+pub const MSR_IA32_MTRR_FIX4K_F8000: u32 = 0x0000026F;
 
 // Table for fixed MTRRs
 pub const MMTRR_LIB_FIXED_MTRR_TABLE: [FixedMtrr; 11] = [
@@ -225,6 +225,34 @@ pub struct MsrIa32MtrrDefType {
     #[bits(52)]
     pub reserved: u64, // [Bits 31:12] Reserved (20 bits)
 }
+
+#[bitfield(u64)]
+pub struct MsrIa32MtrrPhysbaseRegister {
+    #[bits(8)]
+    pub mem_type: u8,      // [Bits 7:0] Type. Specifies memory type of the range.
+    #[bits(4)]
+    pub reserved1: u8,  // [Bits 11:8] Reserved.
+    #[bits(40)]
+    pub phys_base: u64,  // [Bits 51:12] PhysBase. MTRR physical Base Address.
+    #[bits(12)]
+    pub reserved2: u32, // [Bits MAXPHYSADDR:32] PhysBase. Upper bits of MTRR physical Base Address.
+}
+
+
+#[bitfield(u64)]
+pub struct MsrIa32MtrrPhysmaskRegister {
+    #[bits(11)]
+    pub reserved1: u16,      //
+    #[bits(1)]
+    pub v: bool,  // [Bit 11] Valid Enable range mask.
+    #[bits(40)]
+    pub phys_mask: u64,  // [Bits 51:12] PhysMask. MTRR physical Base Address.
+    #[bits(12)]
+    pub reserved2: u32, // [Bits MAXPHYSADDR:32] PhysBase. Upper bits of MTRR physical Base Address.
+}
+
+
+
 
 /**
   CPUID Version Information returned in EDX for CPUID leaf

@@ -5,5 +5,6 @@ pub mod structs;
 pub mod utils;
 pub mod error;
 pub mod edk_error;
-pub(crate) mod reg;
+
+pub(crate) mod hal;
 
