@@ -3,13 +3,10 @@ use mtrr::structs::{
     MtrrVariableSetting, MTRR_NUMBER_OF_FIXED_MTRR, MTRR_NUMBER_OF_VARIABLE_MTRR, SIZE_1MB,
 };
 use mtrr::structs::{
-    MtrrSettings, CPUID_EXTENDED_FUNCTION, CPUID_SIGNATURE, CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS,
-    CPUID_VERSION_INFO, CPUID_VIR_PHY_ADDRESS_SIZE,
+    MtrrSettings,
 };
 
-use rand::random;
 use rand::Rng;
-use std::cmp::Ordering;
 
 // /**
 //   Initialize the MTRR registers.
@@ -55,7 +52,7 @@ pub fn collect_test_result(
                 mtrrs.variables.mtrr[index].base & mtrr_valid_address_mask;
             raw_memory_ranges[*mtrr_count as usize].mem_type = MtrrMemoryCacheType::from(base.mem_type());
             raw_memory_ranges[*mtrr_count as usize].length =
-                (!mtrrs.variables.mtrr[index].mask & mtrr_valid_address_mask & mtrr_valid_bits_mask) + 1;
+                ((!(mtrrs.variables.mtrr[index].mask & mtrr_valid_address_mask)) & mtrr_valid_bits_mask) + 1;
             *mtrr_count += 1;
         }
     }
@@ -201,7 +198,7 @@ pub fn generate_valid_and_configurable_mtrr_pairs(
     wp_count: u32,
     wc_count: u32,
 ) {
-    let mut index = 0;
+    let index = 0;
 
     // 1. Generate UC, WT, WB in order.
     for index in 0..uc_count {
@@ -386,8 +383,8 @@ pub fn remove_duplicates_in_sorted_array(array: &mut [u64], count: &mut u32) {
   @param Range   The range to check.
   @return TRUE when Address is in the Range.
 **/
-pub fn address_in_range(address: u64, range: &MtrrMemoryRange) -> bool {
-    address >= range.base_address && address <= range.base_address + range.length - 1
+pub fn address_in_range(address: u64, raw_range: &MtrrMemoryRange) -> bool {
+    address >= raw_range.base_address && address <= raw_range.base_address + raw_range.length - 1
 }
 
 /**
@@ -554,15 +551,32 @@ pub fn collect_endpoints(
 ) {
     assert_eq!(raw_memory_range_count << 1, endpoints.len());
 
-    for index in (0..endpoints.len()).step_by(2) {
-        let raw_range_index = index >> 1;
-        endpoints[index] = raw_memory_ranges[raw_range_index].base_address;
-        endpoints[index + 1] =
-            raw_memory_ranges[raw_range_index].base_address + raw_memory_ranges[raw_range_index].length - 1;
+    let mut index = 0;
+    let mut index2 = 0;
+    while index < raw_memory_range_count {
+        let base_address = raw_memory_ranges[index].base_address;
+        let length = raw_memory_ranges[index].length;
+
+        if length == 0 {
+            index += 1;
+            continue;
+        }
+
+        endpoints[index2] = base_address;
+        endpoints[index2 + 1] = base_address + length - 1;
+        index2 += 2;
+
+        index += 1;
     }
 
+    endpoints.shrink_to_fit();
     endpoints.sort_unstable();
     endpoints.dedup();
+    endpoints.shrink_to_fit();
+
+    // for i in 0..endpoints.len() {
+    //     println!("#### Endpoints[{}] = {:x} \n", i, endpoints[i]);
+    // }
 }
 
 /**
@@ -602,6 +616,10 @@ pub fn get_effective_memory_ranges(
     collect_endpoints(&mut all_endpoints_inclusive, raw_memory_ranges, raw_memory_range_count);
     println!("all_endpoints_inclusive.len(): {} ", all_endpoints_inclusive.len());
 
+    for i in 0..all_endpoints_inclusive.len() {
+        println!("#### AllEndpointsInclusive[{}] = {:x} \n", i, all_endpoints_inclusive[i]);
+    }
+
     let mut all_range_pieces_count_actual = 0;
     for index in 0..all_endpoints_inclusive.len() - 1 {
         let overlap_bit_flag1 =
@@ -611,24 +629,27 @@ pub fn get_effective_memory_ranges(
         let overlap_flag_relation = check_overlap_bit_flags_relation(overlap_bit_flag1, overlap_bit_flag2);
 
         println!(
-            "#### Index = {:x} OverlapBitFlag1 = {:x}, OverlapBitFlag2 = {:x}, OverlapFlagRelation = {:x} \n",
+            "#### Index = {} OverlapBitFlag1 = {:x}, OverlapBitFlag2 = {:x}, OverlapFlagRelation = {:x} \n",
             index, overlap_bit_flag1, overlap_bit_flag2, overlap_flag_relation
         );
 
         match overlap_flag_relation {
             0 => {
+                // [1, 2]
                 all_range_pieces[all_range_pieces_count_actual].base_address = all_endpoints_inclusive[index];
                 all_range_pieces[all_range_pieces_count_actual].length =
                     all_endpoints_inclusive[index + 1] - all_endpoints_inclusive[index] + 1;
                 all_range_pieces_count_actual += 1;
             }
             1 => {
+                // [1, 2)
                 all_range_pieces[all_range_pieces_count_actual].base_address = all_endpoints_inclusive[index];
                 all_range_pieces[all_range_pieces_count_actual].length =
                     (all_endpoints_inclusive[index + 1] - 1) - all_endpoints_inclusive[index] + 1;
                 all_range_pieces_count_actual += 1;
             }
             2 => {
+                // (1, 2]
                 all_range_pieces[all_range_pieces_count_actual].base_address = all_endpoints_inclusive[index] + 1;
                 all_range_pieces[all_range_pieces_count_actual].length =
                     all_endpoints_inclusive[index + 1] - (all_endpoints_inclusive[index] + 1) + 1;
@@ -645,11 +666,19 @@ pub fn get_effective_memory_ranges(
                 }
             }
             3 => {
+                // (1, 2)
                 all_range_pieces[all_range_pieces_count_actual].base_address = all_endpoints_inclusive[index] + 1;
                 all_range_pieces[all_range_pieces_count_actual].length =
-                    (all_endpoints_inclusive[index + 1] - 1) - (all_endpoints_inclusive[index] + 1) + 1;
+                    (all_endpoints_inclusive[index + 1]) - (all_endpoints_inclusive[index] + 1);
                 if all_range_pieces[all_range_pieces_count_actual].length == 0 {
-                    break;
+                    // Only in case 3 can exists Length=0, we should skip such "segment".
+
+                    // In C, To exit the current switch block and continue the
+                    // next iteration of the outer loop we use break statement.
+                    // But in Rust, we use continue. Accidentally putting a
+                    // break would exit the loop! and debugging this would cost
+                    // you a day and a night :-)
+                    continue;
                 }
                 all_range_pieces_count_actual += 1;
 

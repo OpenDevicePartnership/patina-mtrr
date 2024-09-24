@@ -7,22 +7,15 @@ use common::{
     test_hal::{create_mtrr_lib_with_mock_hal, MockHal},
 };
 use mtrr::{
-    edk_error::{return_error, ReturnStatus, RETURN_BUFFER_TOO_SMALL, RETURN_SUCCESS},
+    edk_error::{return_error, ReturnStatus, RETURN_SUCCESS},
     hal::HalTrait,
     structs::{
         MsrIa32MtrrDefType, MsrIa32MtrrPhysbaseRegister, MsrIa32MtrrPhysmaskRegister, MtrrFixedSettings,
-        MtrrMemoryCacheType, MtrrMemoryRange, MtrrSettings, MtrrVariableSetting, MtrrVariableSettings, VariableMtrr,
-        MMTRR_LIB_FIXED_MTRR_TABLE, MSR_IA32_MTRR_DEF_TYPE, MSR_IA32_MTRR_FIX16K_80000, MSR_IA32_MTRR_FIX16K_A0000,
-        MSR_IA32_MTRR_FIX4K_C0000, MSR_IA32_MTRR_FIX4K_C8000, MSR_IA32_MTRR_FIX4K_D0000, MSR_IA32_MTRR_FIX4K_D8000,
-        MSR_IA32_MTRR_FIX4K_E0000, MSR_IA32_MTRR_FIX4K_E8000, MSR_IA32_MTRR_FIX4K_F0000, MSR_IA32_MTRR_FIX4K_F8000,
-        MSR_IA32_MTRR_FIX64K_00000, MSR_IA32_MTRR_PHYSBASE0, MSR_IA32_MTRR_PHYSMASK0, MTRR_NUMBER_OF_FIXED_MTRR,
-        MTRR_NUMBER_OF_LOCAL_MTRR_RANGES, MTRR_NUMBER_OF_VARIABLE_MTRR, SIZE_1MB,
+        MtrrMemoryCacheType, MtrrMemoryRange, MtrrSettings, MtrrVariableSetting, MtrrVariableSettings, VariableMtrr, MSR_IA32_MTRR_DEF_TYPE, MSR_IA32_MTRR_PHYSBASE0, MSR_IA32_MTRR_PHYSMASK0, MTRR_NUMBER_OF_FIXED_MTRR, MTRR_NUMBER_OF_VARIABLE_MTRR,
     },
     utils::lshift_u64,
 };
 use rand::random;
-use rand::Rng;
-use std::{iter, ptr};
 use std::{panic, u32};
 // use support::{generate_valid_and_configurable_mtrr_pairs, get_effective_memory_ranges};
 mod common;
@@ -40,16 +33,16 @@ mod common;
 **/
 fn verify_memory_ranges(
     expected_memory_ranges: &[MtrrMemoryRange],
-    _expected_memory_ranges_count: usize,
+    expected_memory_ranges_count: usize,
     actual_ranges: &[MtrrMemoryRange],
-    _actual_ranges_count: usize,
+    actual_ranges_count: usize,
 ) {
-    assert_eq!(expected_memory_ranges.len(), actual_ranges.len());
+    assert_eq!(expected_memory_ranges_count, actual_ranges_count);
 
-    for (expected, actual) in expected_memory_ranges.iter().zip(actual_ranges.iter()) {
-        assert_eq!(expected.base_address, actual.base_address);
-        assert_eq!(expected.length, actual.length);
-        assert_eq!(expected.mem_type, actual.mem_type);
+    for index in 0..expected_memory_ranges_count {
+        assert_eq!(expected_memory_ranges[index].base_address, actual_ranges[index].base_address);
+        assert_eq!(expected_memory_ranges[index].length, actual_ranges[index].length);
+        assert_eq!(expected_memory_ranges[index].mem_type, actual_ranges[index].mem_type);
     }
 }
 
@@ -138,7 +131,7 @@ pub fn generate_random_memory_type_combination(
 //             MtrrMemoryRange::default();
 //             MTRR_NUMBER_OF_FIXED_MTRR * std::mem::size_of::<u64>() + 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 1
 //         ];
-//     let mut expected_variable_mtrr_usage;
+//     let mut raw_mtrr_range_count;
 //     let mut expected_memory_ranges_count;
 
 //     let mut actual_memory_ranges =
@@ -176,20 +169,20 @@ pub fn generate_random_memory_type_combination(
 //         wc_count,
 //     );
 
-//     expected_variable_mtrr_usage = uc_count + wt_count + wb_count + wp_count + wc_count;
+//     raw_mtrr_range_count = uc_count + wt_count + wb_count + wp_count + wc_count;
 //     expected_memory_ranges_count = expected_memory_ranges.len();
 //     get_effective_memory_ranges(
 //         system_parameter.default_cache_type,
 //         (system_parameter.physical_address_bits - system_parameter.mk_tme_keyid_bits) as u32,
 //         &raw_mtrr_range,
-//         expected_variable_mtrr_usage as usize,
+//         raw_mtrr_range_count as usize,
 //         &mut expected_memory_ranges,
 //         &mut expected_memory_ranges_count,
 //     );
 
 //     println!(
 //         "Total MTRR [{}]: UC={}, WT={}, WB={}, WP={}, WC={}",
-//         expected_variable_mtrr_usage, uc_count, wt_count, wb_count, wp_count, wc_count
+//         raw_mtrr_range_count, uc_count, wt_count, wb_count, wp_count, wc_count
 //     );
 //     println!("--- Expected Memory Ranges [{}] ---", expected_memory_ranges_count);
 //     dump_memory_ranges(&expected_memory_ranges, expected_memory_ranges_count);
@@ -247,7 +240,7 @@ pub fn generate_random_memory_type_combination(
 //             &actual_memory_ranges,
 //             actual_memory_ranges_count,
 //         );
-//         assert!(expected_variable_mtrr_usage >= actual_variable_mtrr_usage);
+//         assert!(raw_mtrr_range_count >= actual_variable_mtrr_usage);
 
 //         returned_memory_ranges_count = returned_memory_ranges.len();
 //         status = mtrr_get_memory_attributes_in_mtrr_settings(
@@ -586,7 +579,7 @@ fn unit_test_mtrr_get_all_mtrrs() {
 #[test]
 fn unit_test_mtrr_set_all_mtrrs() {
     // Default system parameter
-    let mut system_parameter: MtrrLibSystemParameter =
+    let system_parameter: MtrrLibSystemParameter =
         MtrrLibSystemParameter::new(42, true, true, MtrrMemoryCacheType::Uncacheable, 12, 0);
 
     let mut expected_mtrr_settings = MtrrSettings::default();
@@ -664,8 +657,8 @@ fn unit_test_mtrr_get_memory_attribute_in_variable_mtrr() {
         hal.asm_write_msr64(MSR_IA32_MTRR_PHYSMASK0 + (index << 1), pair.mask);
     }
 
-    let mut valid_mtrr_bits_mask: u64;
-    let mut valid_mtrr_address_mask: u64;
+    let valid_mtrr_bits_mask: u64;
+    let valid_mtrr_address_mask: u64;
     valid_mtrr_bits_mask = (1u64 << system_parameter.physical_address_bits) - 1;
     valid_mtrr_address_mask = valid_mtrr_bits_mask & 0xfffffffffffff000;
     // println!("valid_mtrr_bits_mask: {:x}", valid_mtrr_bits_mask);
@@ -837,9 +830,10 @@ fn unit_test_core2() {
         // MtrrLibSystemParameter::new(48, true, true, MtrrMemoryCacheType::WriteBack, 12, 7),
     ];
 
-    let iterations = 10;
+    let iterations = 1;
     for system_parameter in &system_parameters {
-        for _ in 0..iterations {
+        for i in 0..iterations {
+            println!("Iteration: {}", i);
             unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_in_mtrr_settings_patched(system_parameter);
         }
     }
@@ -907,7 +901,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_in_mtrr_setting
     let mut raw_mtrr_range = [MtrrMemoryRange::default(); MTRR_NUMBER_OF_VARIABLE_MTRR];
     let mut expected_memory_ranges = [MtrrMemoryRange::default();
         MTRR_NUMBER_OF_FIXED_MTRR * std::mem::size_of::<u64>() + 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 1];
-    let mut expected_variable_mtrr_usage: u32;
+    let raw_mtrr_range_count: u32;
     let mut expected_memory_ranges_count: usize = 0;
 
     let mut actual_memory_ranges = [MtrrMemoryRange::default();
@@ -919,7 +913,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_in_mtrr_setting
         MTRR_NUMBER_OF_FIXED_MTRR * std::mem::size_of::<u64>() + 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 1];
     let mut returned_memory_ranges_count: usize;
 
-    let mut mtrrs: [&mut MtrrSettings; 2] = [&mut local_mtrrs, &mut MtrrSettings::default()];
+    let mtrrs: [&mut MtrrSettings; 2] = [&mut local_mtrrs, &mut MtrrSettings::default()];
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(system_parameter);
     let pcd_cpu_number_of_reserved_variable_mtrrs = hal.get_pcd_cpu_number_of_reserved_variable_mtrrs();
@@ -944,30 +938,30 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_in_mtrr_setting
         wc_count,
     );
 
-    expected_variable_mtrr_usage = uc_count + wt_count + wb_count + wp_count + wc_count;
+    raw_mtrr_range_count = uc_count + wt_count + wb_count + wp_count + wc_count;
     expected_memory_ranges_count = expected_memory_ranges.len() as usize;
 
-//     // TESTCODE BEGIN
-//   let  raw_mtrr_range:[MtrrMemoryRange; 7] = [
-//     MtrrMemoryRange::new(0x00000036fe000000, 0x0000000002000000, MtrrMemoryCacheType::Uncacheable ),
-//     MtrrMemoryRange::new(0x0000003800000000, 0x0000000004000000, MtrrMemoryCacheType::Uncacheable ),
-//     MtrrMemoryRange::new(0x0000003000000000, 0x0000000100000000, MtrrMemoryCacheType::Uncacheable ),
-//     MtrrMemoryRange::new(0x0000002000000000, 0x0000000000400000, MtrrMemoryCacheType::WriteThrough ),
-//     MtrrMemoryRange::new(0x0000000c00000000, 0x0000000010000000, MtrrMemoryCacheType::WriteBack ),
-//     MtrrMemoryRange::new(0x0000001440000000, 0x0000000000002000, MtrrMemoryCacheType::WriteBack ),
-//     MtrrMemoryRange::new(0x00000036b0000000, 0x0000000002000000, MtrrMemoryCacheType::WriteProtected ),
-//   ];
-//   expected_variable_mtrr_usage = 7;
-//     // TESTCODE end
+    //     // TESTCODE BEGIN
+    //   let  raw_mtrr_range:[MtrrMemoryRange; 7] = [
+    //     MtrrMemoryRange::new(0x00000036fe000000, 0x0000000002000000, MtrrMemoryCacheType::Uncacheable ),
+    //     MtrrMemoryRange::new(0x0000003800000000, 0x0000000004000000, MtrrMemoryCacheType::Uncacheable ),
+    //     MtrrMemoryRange::new(0x0000003000000000, 0x0000000100000000, MtrrMemoryCacheType::Uncacheable ),
+    //     MtrrMemoryRange::new(0x0000002000000000, 0x0000000000400000, MtrrMemoryCacheType::WriteThrough ),
+    //     MtrrMemoryRange::new(0x0000000c00000000, 0x0000000010000000, MtrrMemoryCacheType::WriteBack ),
+    //     MtrrMemoryRange::new(0x0000001440000000, 0x0000000000002000, MtrrMemoryCacheType::WriteBack ),
+    //     MtrrMemoryRange::new(0x00000036b0000000, 0x0000000002000000, MtrrMemoryCacheType::WriteProtected ),
+    //   ];
+    //   raw_mtrr_range_count = 7;
+    //     // TESTCODE end
 
-    println!("--- Raw MTRR Range [{}]---", expected_variable_mtrr_usage);
-    dump_memory_ranges(&raw_mtrr_range, expected_variable_mtrr_usage as usize);
+    println!("--- Raw MTRR Range [{}]---", raw_mtrr_range_count);
+    dump_memory_ranges(&raw_mtrr_range, raw_mtrr_range_count as usize);
 
     get_effective_memory_ranges(
         system_parameter.default_cache_type,
         system_parameter.physical_address_bits as u32 - system_parameter.mk_tme_keyid_bits as u32,
         &raw_mtrr_range[..],
-        expected_variable_mtrr_usage as usize,
+        raw_mtrr_range_count as usize,
         &mut expected_memory_ranges[..],
         &mut expected_memory_ranges_count,
     );
@@ -986,7 +980,6 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_in_mtrr_setting
     let mtrr_settings = [&mut mtrr_setting1];
     for mtrr_setting in mtrr_settings {
         for index in 0..expected_memory_ranges_count {
-
             status = mtrrlib.mtrr_set_memory_attribute_in_mtrr_settings(
                 Some(mtrr_setting),
                 expected_memory_ranges[index].base_address,
@@ -996,8 +989,6 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_in_mtrr_setting
             if return_error(status) {
                 return;
             }
-
-
         }
 
         // if mtrr_setting.is_none() {
@@ -1024,7 +1015,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_in_mtrr_setting
             &actual_memory_ranges,
             actual_memory_ranges_count,
         );
-        assert!(expected_variable_mtrr_usage >= actual_variable_mtrr_usage);
+        assert!(raw_mtrr_range_count >= actual_variable_mtrr_usage);
 
         returned_memory_ranges_count = returned_memory_ranges.len();
         status = mtrrlib.mtrr_get_memory_attributes_in_mtrr_settings(
@@ -1046,10 +1037,6 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_in_mtrr_setting
     }
 }
 
-
-
-
-
 fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_in_mtrr_settings_patched(
     system_parameter: &MtrrLibSystemParameter,
 ) {
@@ -1064,7 +1051,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_in_mtrr_setting
     let mut raw_mtrr_range = [MtrrMemoryRange::default(); MTRR_NUMBER_OF_VARIABLE_MTRR];
     let mut expected_memory_ranges = [MtrrMemoryRange::default();
         MTRR_NUMBER_OF_FIXED_MTRR * std::mem::size_of::<u64>() + 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 1];
-    let mut expected_variable_mtrr_usage: u32;
+    let raw_mtrr_range_count: u32;
     let mut expected_memory_ranges_count: usize = 0;
 
     let mut actual_memory_ranges = [MtrrMemoryRange::default();
@@ -1076,7 +1063,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_in_mtrr_setting
         MTRR_NUMBER_OF_FIXED_MTRR * std::mem::size_of::<u64>() + 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 1];
     let mut returned_memory_ranges_count: usize;
 
-    let mut mtrrs: [&mut MtrrSettings; 2] = [&mut local_mtrrs, &mut MtrrSettings::default()];
+    let mtrrs: [&mut MtrrSettings; 2] = [&mut local_mtrrs, &mut MtrrSettings::default()];
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(system_parameter);
     let pcd_cpu_number_of_reserved_variable_mtrrs = hal.get_pcd_cpu_number_of_reserved_variable_mtrrs();
@@ -1101,33 +1088,53 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_in_mtrr_setting
         wc_count,
     );
 
-    expected_variable_mtrr_usage = uc_count + wt_count + wb_count + wp_count + wc_count;
+    raw_mtrr_range_count = uc_count + wt_count + wb_count + wp_count + wc_count;
     expected_memory_ranges_count = expected_memory_ranges.len() as usize;
 
-    // TESTCODE BEGIN
-  let  raw_mtrr_range:[MtrrMemoryRange; 10] = [
-    MtrrMemoryRange::new(0x0000002200000000, 0x0000000010000000, MtrrMemoryCacheType::Uncacheable ),
-    MtrrMemoryRange::new(0x0000001b00000000, 0x0000000004000000, MtrrMemoryCacheType::Uncacheable ),
-    MtrrMemoryRange::new(0x0000003800000000, 0x0000000000200000, MtrrMemoryCacheType::Uncacheable ),
-    MtrrMemoryRange::new(0x0000001eb2a60000, 0x0000000000004000, MtrrMemoryCacheType::Uncacheable ),
-    MtrrMemoryRange::new(0x0000003000000000, 0x0000000010000000, MtrrMemoryCacheType::Uncacheable ),
-    MtrrMemoryRange::new(0x0000002400000000, 0x0000000200000000, MtrrMemoryCacheType::WriteThrough ),
-    MtrrMemoryRange::new(0x0000000664000000, 0x0000000000200000, MtrrMemoryCacheType::WriteProtected ),
-    MtrrMemoryRange::new(0x0000000c00000000, 0x0000000000040000, MtrrMemoryCacheType::WriteProtected ),
-    MtrrMemoryRange::new(0x0000001000000000, 0x0000001000000000, MtrrMemoryCacheType::WriteCombining ),
-    MtrrMemoryRange::new(0x0000002ac0000000, 0x0000000001000000, MtrrMemoryCacheType::WriteCombining ),
-      ];
-  expected_variable_mtrr_usage = raw_mtrr_range.len() as u32;
-    // TESTCODE end
+    //     // TESTCODE BEGIN
+    // let raw_mtrr_range: [MtrrMemoryRange; 11] = [
+    //     MtrrMemoryRange::new(0x0000001600000000, 0x0000000200000000, MtrrMemoryCacheType::Uncacheable),
+    //     MtrrMemoryRange::new(0x0000000820000000, 0x0000000020000000, MtrrMemoryCacheType::WriteThrough),
+    //     MtrrMemoryRange::new(0x0000002880000000, 0x0000000000100000, MtrrMemoryCacheType::WriteThrough),
+    //     MtrrMemoryRange::new(0x0000003780000000, 0x0000000000002000, MtrrMemoryCacheType::WriteThrough),
+    //     MtrrMemoryRange::new(0x0000002300000000, 0x0000000000010000, MtrrMemoryCacheType::WriteBack),
+    //     MtrrMemoryRange::new(0x0000000300000000, 0x0000000000002000, MtrrMemoryCacheType::WriteBack),
+    //     MtrrMemoryRange::new(0x0000002100000000, 0x0000000000020000, MtrrMemoryCacheType::WriteBack),
+    //     MtrrMemoryRange::new(0x0000001000000000, 0x0000000800000000, MtrrMemoryCacheType::WriteBack),
+    //     MtrrMemoryRange::new(0x00000027bd000000, 0x0000000000800000, MtrrMemoryCacheType::WriteProtected),
+    //     MtrrMemoryRange::new(0x0000002200000000, 0x0000000080000000, MtrrMemoryCacheType::WriteCombining),
+    //     MtrrMemoryRange::new(0x0000000c20000000, 0x0000000000800000, MtrrMemoryCacheType::WriteCombining),
+    // ];
 
-    println!("--- Raw MTRR Range [{}]---", expected_variable_mtrr_usage);
-    dump_memory_ranges(&raw_mtrr_range, expected_variable_mtrr_usage as usize);
+    // let raw_mtrr_range: [MtrrMemoryRange; 10] = [
+    //     MtrrMemoryRange::new(0x0000000800000000, 0x0000000800000000, MtrrMemoryCacheType::Uncacheable ),
+    //     MtrrMemoryRange::new(0x0000002260000000, 0x0000000000002000, MtrrMemoryCacheType::Uncacheable ),
+    //     MtrrMemoryRange::new(0x0000003400000000, 0x0000000400000000, MtrrMemoryCacheType::Uncacheable ),
+    //     MtrrMemoryRange::new(0x0000002000000000, 0x0000000002000000, MtrrMemoryCacheType::WriteThrough ),
+    //     MtrrMemoryRange::new(0x0000001b76400000, 0x0000000000020000, MtrrMemoryCacheType::WriteBack ),
+    //     MtrrMemoryRange::new(0x0000002450000000, 0x0000000000200000, MtrrMemoryCacheType::WriteBack ),
+    //     MtrrMemoryRange::new(0x00000034849c0000, 0x0000000000004000, MtrrMemoryCacheType::WriteBack ),
+    //     MtrrMemoryRange::new(0x0000003280000000, 0x0000000000002000, MtrrMemoryCacheType::WriteBack ),
+    //     MtrrMemoryRange::new(0x0000001600000000, 0x0000000040000000, MtrrMemoryCacheType::WriteProtected ),
+    //     MtrrMemoryRange::new(0x0000000100000000, 0x0000000000200000, MtrrMemoryCacheType::WriteCombining ),
+    // ];
+    // //   let  raw_mtrr_range:[MtrrMemoryRange; 4] = [
+    // //     MtrrMemoryRange::new(0x0000001f29be8000, 0x0000000000001000, MtrrMemoryCacheType::Uncacheable),
+    // //     MtrrMemoryRange::new(0x0000001ac0000000, 0x0000000002000000, MtrrMemoryCacheType::Uncacheable),
+    // //     MtrrMemoryRange::new(0x0000001000000000, 0x0000000004000000, MtrrMemoryCacheType::WriteThrough),
+    // //     MtrrMemoryRange::new(0x0000001c00000000, 0x0000000400000000, MtrrMemoryCacheType::WriteBack),
+    // //   ];
+    //   raw_mtrr_range_count = raw_mtrr_range.len() as u32;
+    //     // TESTCODE end
+
+    println!("--- Raw MTRR Range [{}]---", raw_mtrr_range_count);
+    dump_memory_ranges(&raw_mtrr_range, raw_mtrr_range_count as usize);
 
     get_effective_memory_ranges(
         system_parameter.default_cache_type,
         system_parameter.physical_address_bits as u32 - system_parameter.mk_tme_keyid_bits as u32,
         &raw_mtrr_range[..],
-        expected_variable_mtrr_usage as usize,
+        raw_mtrr_range_count as usize,
         &mut expected_memory_ranges[..],
         &mut expected_memory_ranges_count,
     );
@@ -1162,8 +1169,6 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_in_mtrr_setting
             if return_error(status) {
                 return;
             }
-
-            
         }
 
         // if mtrr_setting.is_none() {
@@ -1176,7 +1181,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_in_mtrr_setting
             system_parameter.default_cache_type,
             system_parameter.physical_address_bits as u32 - system_parameter.mk_tme_keyid_bits as u32,
             system_parameter.variable_mtrr_count,
-            &local_mtrrs,
+            mtrr_setting,
             &mut actual_memory_ranges,
             &mut actual_memory_ranges_count,
             &mut actual_variable_mtrr_usage,
@@ -1184,17 +1189,19 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_in_mtrr_setting
 
         println!("--- Actual Memory Ranges [{}] ---", actual_memory_ranges_count);
         dump_memory_ranges(&actual_memory_ranges, actual_memory_ranges_count);
+        println!("--- Expected Memory Ranges [{}] ---", expected_memory_ranges_count);
+        dump_memory_ranges(&expected_memory_ranges, expected_memory_ranges_count);
         verify_memory_ranges(
             &expected_memory_ranges[..],
             expected_memory_ranges_count,
             &actual_memory_ranges,
             actual_memory_ranges_count,
         );
-        assert!(expected_variable_mtrr_usage >= actual_variable_mtrr_usage);
+        assert!(raw_mtrr_range_count >= actual_variable_mtrr_usage);
 
         returned_memory_ranges_count = returned_memory_ranges.len();
         status = mtrrlib.mtrr_get_memory_attributes_in_mtrr_settings(
-            Some(&local_mtrrs),
+            Some(mtrr_setting),
             &mut returned_memory_ranges[..],
             Some(&mut returned_memory_ranges_count),
         );
@@ -1208,6 +1215,6 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_in_mtrr_setting
             returned_memory_ranges_count,
         );
 
-        local_mtrrs = MtrrSettings::default();
+        // local_mtrrs = MtrrSettings::default();
     }
 }

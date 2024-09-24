@@ -881,10 +881,14 @@ impl<H: HalTrait> MtrrLib<H> {
         let mut start_index = *working_ranges_count;
         let mut end_index = *working_ranges_count;
 
+        // println!("Assinged start_index: {} end_index: {} working_ranges_count: {}", start_index, end_index, *working_ranges_count);
+
         // Determine which existing range can accommodate the new range
         for index in 0..*working_ranges_count {
             let range = &working_ranges[index];
 
+            // println!("index: {} base_address/limit: {:x}/{:x} range base_address: {:x} length: {:x} mem_type: {:?}",
+            // index, base_address, limit, range.base_address, range.length, range.mem_type);
             // start index can begin on one slot and end index could land on another
             // slot depending up on the size of the new range
             if start_index == *working_ranges_count
@@ -905,6 +909,7 @@ impl<H: HalTrait> MtrrLib<H> {
             }
         }
 
+        // println!("modified start_index: {} end_index: {} working_ranges_count: {}", start_index, end_index, *working_ranges_count);
         assert!(start_index != *working_ranges_count && end_index != *working_ranges_count);
         if start_index == end_index && working_ranges[start_index].mem_type == mem_type {
             return RETURN_ALREADY_STARTED;
@@ -928,7 +933,7 @@ impl<H: HalTrait> MtrrLib<H> {
             }
         }
 
-        println!("start_index: {} end_index: {}", start_index, end_index);
+        // println!("start_index: {} end_index: {}", start_index, end_index);
         let mut delta_count: i64 = end_index as i64 - start_index as i64 - 2;
 
         if length_left == 0 {
@@ -947,13 +952,16 @@ impl<H: HalTrait> MtrrLib<H> {
         //     working_ranges[i + delta_count] = working_ranges[i].clone();
         // }
 
-        for i in 0..(*working_ranges_count - end_index - 1) {
-            working_ranges[(i as i64 + end_index as i64 + 1 - delta_count) as usize] =
-                working_ranges[i + end_index + 1].clone();
+        for i in (0..(*working_ranges_count - end_index - 1)).rev() {
+            let src = i + end_index + 1;
+            let dest = (i as i64 + end_index as i64 + 1 - delta_count) as usize;
+            working_ranges[dest] = working_ranges[src].clone();
+
+            // println!("src: {} dest: {} working_ranges_count: {}", src, dest, *working_ranges_count);
         }
 
         *working_ranges_count = (*working_ranges_count as i64 - delta_count) as i64 as usize;
-
+        // println!("working_ranges_count: {} delta_count: {}", *working_ranges_count, delta_count);
         if length_left != 0 {
             working_ranges[start_index].length = length_left;
             start_index += 1;
@@ -1483,8 +1491,8 @@ impl<H: HalTrait> MtrrLib<H> {
             ranges[range_count - 1].base_address + ranges[range_count - 1].length,
             vertex_count
         );
-        let required_scratch_size = vertex_count * core::mem::size_of::<MtrrLibAddress>()
-            + vertex_count * vertex_count  + 1;
+        let required_scratch_size =
+            vertex_count * core::mem::size_of::<MtrrLibAddress>() + vertex_count * vertex_count + 1;
         if *scratch_size < required_scratch_size {
             *scratch_size = required_scratch_size;
             return RETURN_BUFFER_TOO_SMALL;
@@ -1649,7 +1657,9 @@ impl<H: HalTrait> MtrrLib<H> {
         for index in 0..*mtrr_count {
             println!(
                 "  MTRR base_address: {:x} - {:x} mem_type: {:?}",
-                mtrrs[index].base_address, mtrrs[index].base_address + mtrrs[index].length, mtrrs[index].mem_type
+                mtrrs[index].base_address,
+                mtrrs[index].base_address + mtrrs[index].length,
+                mtrrs[index].mem_type
             );
         }
 
@@ -1727,18 +1737,26 @@ impl<H: HalTrait> MtrrLib<H> {
         original_variable_mtrr_ranges_count: u32,
         working_ranges: &mut [MtrrMemoryRange],
         working_ranges_capacity: usize,
-        range_count: &mut usize,
+        working_ranges_count: &mut usize,
     ) -> ReturnStatus {
         let mut status: ReturnStatus;
 
+        println!("-------------------mtrr_lib_apply_variable_mtrrs start---------------------------");
         // 1. Set WB (Write Back)
         for index in 0..original_variable_mtrr_ranges_count as usize {
             let range = &original_variable_mtrr_ranges[index];
+            println!(
+                "SET 1  range[{}] = {:x} - {:x} mem_type: {:?}",
+                index,
+                range.base_address,
+                range.base_address + range.length,
+                range.mem_type
+            );
             if range.length != 0 && range.mem_type == MtrrMemoryCacheType::WriteBack {
                 status = self.mtrr_lib_set_memory_type(
                     working_ranges,
                     working_ranges_capacity,
-                    range_count,
+                    working_ranges_count,
                     range.base_address,
                     range.length,
                     range.mem_type,
@@ -1746,12 +1764,36 @@ impl<H: HalTrait> MtrrLib<H> {
                 if status == RETURN_OUT_OF_RESOURCES {
                     return status;
                 }
+
+                for index2 in 0..*working_ranges_count {
+                    println!(
+                        "   SET 1  working_ranges[{}] = {:x} - {:x} mem_type: {:?}",
+                        index2,
+                        working_ranges[index2].base_address,
+                        working_ranges[index2].base_address + working_ranges[index2].length,
+                        working_ranges[index2].mem_type
+                    );
+                }
             }
         }
+
+        // for index in 0..*working_ranges_count {
+        //     println!(
+        //         "SET 1  working_ranges[{}] = {:x} - {:x} mem_type: {:?}",
+        //         index, working_ranges[index].base_address, working_ranges[index].base_address + working_ranges[index].length, working_ranges[index].mem_type
+        //     );
+        // }
 
         // 2. Set other types (non-WB and non-UC)
         for index in 0..original_variable_mtrr_ranges_count as usize {
             let range = &original_variable_mtrr_ranges[index];
+            println!(
+                "SET 2  range[{}] = {:x} - {:x} mem_type: {:?}",
+                index,
+                range.base_address,
+                range.base_address + range.length,
+                range.mem_type
+            );
             if range.length != 0
                 && range.mem_type != MtrrMemoryCacheType::WriteBack
                 && range.mem_type != MtrrMemoryCacheType::Uncacheable
@@ -1759,13 +1801,23 @@ impl<H: HalTrait> MtrrLib<H> {
                 status = self.mtrr_lib_set_memory_type(
                     working_ranges,
                     working_ranges_capacity,
-                    range_count,
+                    working_ranges_count,
                     range.base_address,
                     range.length,
                     range.mem_type,
                 );
                 if status == RETURN_OUT_OF_RESOURCES {
                     return status;
+                }
+
+                for index2 in 0..*working_ranges_count {
+                    println!(
+                        "   SET 2  working_ranges[{}] = {:x} - {:x} mem_type: {:?}",
+                        index2,
+                        working_ranges[index2].base_address,
+                        working_ranges[index2].base_address + working_ranges[index2].length,
+                        working_ranges[index2].mem_type
+                    );
                 }
             }
         }
@@ -1773,11 +1825,18 @@ impl<H: HalTrait> MtrrLib<H> {
         // 3. Set UC (Uncacheable)
         for index in 0..original_variable_mtrr_ranges_count as usize {
             let range = &original_variable_mtrr_ranges[index];
+            println!(
+                "SET 3  range[{}] = {:x} - {:x} mem_type: {:?}",
+                index,
+                range.base_address,
+                range.base_address + range.length,
+                range.mem_type
+            );
             if range.length != 0 && range.mem_type == MtrrMemoryCacheType::Uncacheable {
                 status = self.mtrr_lib_set_memory_type(
                     working_ranges,
                     working_ranges_capacity,
-                    range_count,
+                    working_ranges_count,
                     range.base_address,
                     range.length,
                     range.mem_type,
@@ -1785,9 +1844,25 @@ impl<H: HalTrait> MtrrLib<H> {
                 if status == RETURN_OUT_OF_RESOURCES {
                     return status;
                 }
+                for index2 in 0..*working_ranges_count {
+                    println!(
+                        "   SET 3  working_ranges[{}] = {:x} - {:x} mem_type: {:?}",
+                        index2,
+                        working_ranges[index2].base_address,
+                        working_ranges[index2].base_address + working_ranges[index2].length,
+                        working_ranges[index2].mem_type
+                    );
+                }
             }
         }
 
+        // for index in 0..*working_ranges_count {
+        //     println!(
+        //         "SET 3  working_ranges[{}] = {:x} - {:x} mem_type: {:?}",
+        //         index, working_ranges[index].base_address, working_ranges[index].base_address + working_ranges[index].length, working_ranges[index].mem_type
+        //     );
+        // }
+        println!("-------------------mtrr_lib_apply_variable_mtrrs end---------------------------");
         RETURN_SUCCESS
     }
 
@@ -2269,6 +2344,16 @@ impl<H: HalTrait> MtrrLib<H> {
                 return status;
             }
 
+            println!("mtrr_lib_apply_variable_mtrrs Working range count: {}", working_range_count);
+            for index in 0..working_range_count {
+                println!(
+                    "Working range: {}: [{:016x}, {:016x}) {:?}\n",
+                    index,
+                    working_ranges[index].base_address,
+                    working_ranges[index].base_address + working_ranges[index].length,
+                    working_ranges[index].mem_type as u8,
+                );
+            }
             firmware_variable_mtrr_count =
                 original_variable_mtrr_ranges_count - self.hal.get_pcd_cpu_number_of_reserved_variable_mtrrs();
             assert!(working_range_count <= 2 * firmware_variable_mtrr_count as usize + 1);
@@ -2288,7 +2373,7 @@ impl<H: HalTrait> MtrrLib<H> {
             }
 
             // 2.3. Apply the new memory attribute settings to Ranges.
-
+            println!("Step 2.3");
             modified = false;
             for index in 0..range_count {
                 base_address = ranges[index].base_address;
@@ -2340,6 +2425,7 @@ impl<H: HalTrait> MtrrLib<H> {
                 );
                 println!("high_bit_set_64(mtrr_valid_bits_mask) = {}", high_bit_set_64(mtrr_valid_bits_mask));
                 println!("a0: {:016x} ", 1u64 << high_bit_set_64(mtrr_valid_bits_mask));
+                println!("Step 2.4");
                 status = self.mtrr_lib_set_memory_ranges(
                     default_type,
                     1 << high_bit_set_64(mtrr_valid_bits_mask),
@@ -2376,6 +2462,7 @@ impl<H: HalTrait> MtrrLib<H> {
                     return RETURN_OUT_OF_RESOURCES;
                 }
 
+                println!("Step 2.6");
                 // 2.6. Merge the WorkingVariableMtrrRanges to OriginalVariableMtrrRanges
                 //      Make sure least modification is made to OriginalVariableMtrrRanges.
                 self.mtrr_lib_merge_variable_mtrr(
@@ -2391,6 +2478,7 @@ impl<H: HalTrait> MtrrLib<H> {
         // 3. Apply the below-1MB memory attribute settings
         clear_masks.fill(0);
         or_masks.fill(0);
+        println!("Step 3");
         for index in 0..range_count {
             if ranges[index].base_address >= fixed_mtrr_memory_limit {
                 continue;
@@ -2867,9 +2955,7 @@ impl<H: HalTrait> MtrrLib<H> {
             contain_variable_mtrr = true;
             println!(
                 "Variable MTRR[{:02}]: Base={:#016x} Mask={:#016x}",
-                index,
-                mtrrs.variables.mtrr[index].base,
-                mtrrs.variables.mtrr[index].mask
+                index, mtrrs.variables.mtrr[index].base, mtrrs.variables.mtrr[index].mask
             );
         }
 
