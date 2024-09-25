@@ -1,14 +1,14 @@
 use core::mem::size_of;
 use core::ptr::write_bytes;
 
-use crate::edk_error::return_error;
-use crate::edk_error::ReturnStatus;
-use crate::edk_error::RETURN_ALREADY_STARTED;
-use crate::edk_error::RETURN_BUFFER_TOO_SMALL;
-use crate::edk_error::RETURN_INVALID_PARAMETER;
-use crate::edk_error::RETURN_OUT_OF_RESOURCES;
-use crate::edk_error::RETURN_SUCCESS;
-use crate::edk_error::RETURN_UNSUPPORTED;
+use crate::error::return_error;
+use crate::error::ReturnStatus;
+use crate::error::RETURN_ALREADY_STARTED;
+use crate::error::RETURN_BUFFER_TOO_SMALL;
+use crate::error::RETURN_INVALID_PARAMETER;
+use crate::error::RETURN_OUT_OF_RESOURCES;
+use crate::error::RETURN_SUCCESS;
+use crate::error::RETURN_UNSUPPORTED;
 use crate::hal::Hal;
 use crate::hal::HalTrait;
 use crate::structs::CpuidStructuredExtendedFeatureFlagsEcx;
@@ -53,11 +53,11 @@ use crate::utils::lshift_u64;
 use crate::utils::mult_u64x32;
 use crate::utils::rshift_u64;
 
-fn M(start: u16, index: u16, vertex_count: u16) -> usize {
+fn m(start: u16, index: u16, vertex_count: u16) -> usize {
     (start as usize) * vertex_count as usize + (index as usize)
 }
 
-fn O(start: u16, index: u16, vertex_count: u16) -> usize {
+fn o(start: u16, index: u16, vertex_count: u16) -> usize {
     (index as usize) * vertex_count as usize + (start as usize)
 }
 
@@ -94,7 +94,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @retval FALSE MTRR is not supported when both fixed MTRR is not supported and max
     //                number of variable MTRRs is 0.
     //
-    pub fn mtrr_lib_is_mtrr_supported(
+    fn mtrr_lib_is_mtrr_supported(
         &mut self,
         fixed_mtrr_supported: Option<&mut bool>,
         variable_mtrr_ranges_count: Option<&mut u32>,
@@ -123,6 +123,7 @@ impl<H: HalTrait> MtrrLib<H> {
         let vcnt = (mtrr_cap & 0xFF) as u32; // VCNT is in bits [7:0]
         let fix = ((mtrr_cap >> 8) & 0x1) == 1; // FIX is in bit 8
 
+        assert!(vcnt <= MTRR_NUMBER_OF_VARIABLE_MTRR as u32);
         if let Some(fixed_mtrr_supported) = fixed_mtrr_supported {
             *fixed_mtrr_supported = fix;
         }
@@ -143,8 +144,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @return Variable MTRR count
     //
-    //
-    pub fn get_variable_mtrr_count_worker(&mut self) -> u32 {
+    fn get_variable_mtrr_count_worker(&mut self) -> u32 {
         // Read the MSR to get the MTRR capabilities
         let mtrr_cap = self.hal.asm_read_msr64(MSR_IA32_MTRRCAP);
 
@@ -162,7 +162,6 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @return Variable MTRR count
     //
-    //
     pub fn get_variable_mtrr_count(&mut self) -> u32 {
         if !self.is_mtrr_supported() {
             return 0;
@@ -175,7 +174,6 @@ impl<H: HalTrait> MtrrLib<H> {
     //  Worker function returns the firmware usable variable MTRR count for the CPU.
     //
     //  @return Firmware usable variable MTRR count
-    //
     //
     fn get_firmware_variable_mtrr_count_worker(&mut self) -> u32 {
         // Assuming the existence of these functions
@@ -193,7 +191,6 @@ impl<H: HalTrait> MtrrLib<H> {
     //  Returns the firmware usable variable MTRR count for the CPU.
     //
     //  @return Firmware usable variable MTRR count
-    //
     //
     pub fn get_firmware_variable_mtrr_count(&mut self) -> u32 {
         if !self.is_mtrr_supported() {
@@ -213,7 +210,6 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @param[in]  MtrrSetting    A buffer holding all MTRRs content.
     //
     //  @return  The default MTRR cache type.
-    //
     //
     fn mtrr_get_default_memory_type_worker(&mut self, mtrr_setting: Option<&MtrrSettings>) -> MtrrMemoryCacheType {
         let mut def_type: MsrIa32MtrrDefType = Default::default();
@@ -235,7 +231,6 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @return  The default MTRR cache type.
     //
-    //
     pub fn mtrr_get_default_memory_type(&mut self) -> MtrrMemoryCacheType {
         if !self.is_mtrr_supported() {
             return MtrrMemoryCacheType::Uncacheable;
@@ -252,13 +247,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @param[out] MtrrContext  Pointer to context to save
     //
-    //
     fn mtrr_lib_pre_mtrr_change(&mut self, mtrr_context: &mut MtrrContext) {
-        #[cfg(feature = "test-code")]
-        {
-            return ();
-        }
-
         let mut def_type: MsrIa32MtrrDefType = Default::default();
 
         // Disable interrupts and save current interrupt state
@@ -281,7 +270,7 @@ impl<H: HalTrait> MtrrLib<H> {
         self.hal.asm_write_msr64(MSR_IA32_MTRR_DEF_TYPE, def_type.into_bits());
     }
 
-    ///*
+    //
     //  Cleaning up after programming MTRRs.
     //
     //  This function will do some clean up after programming MTRRs:
@@ -289,7 +278,6 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @param[in] MtrrContext  Pointer to context to restore
     //
-    //*/
     fn mtrr_lib_post_mtrr_change_enable_cache(&mut self, mtrr_context: &MtrrContext) {
         // Flush all TLBs
         self.hal.cpu_flush_tlb();
@@ -312,13 +300,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @param[in] MtrrContext  Pointer to context to restore
     //
-    //
     fn mtrr_lib_post_mtrr_change(&mut self, mtrr_context: &mut MtrrContext) {
-        #[cfg(feature = "test-code")]
-        {
-            return ();
-        }
-
         // Enable Cache MTRR
         // Note: It's possible that MTRR was not enabled earlier.
         //       But it will be enabled here unconditionally.
@@ -336,7 +318,6 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @retval The pointer of FixedSettings
     //
-    //
     fn mtrr_get_fixed_mtrr_worker<'a>(
         &mut self,
         fixed_settings: &'a mut MtrrFixedSettings,
@@ -350,14 +331,13 @@ impl<H: HalTrait> MtrrLib<H> {
         fixed_settings
     }
 
-    ///*
+    //
     //  This function gets the content in fixed MTRRs
     //
     //  @param[out]  FixedSettings  A buffer to hold fixed MTRRs content.
     //
     //  @retval The pointer of FixedSettings
     //
-    //*/
     pub fn mtrr_get_fixed_mtrr<'a>(&mut self, fixed_settings: &'a mut MtrrFixedSettings) -> &'a mut MtrrFixedSettings {
         if !self.is_mtrr_supported() {
             return fixed_settings;
@@ -379,14 +359,13 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @return The VariableMtrrSettings input pointer
     //
-    //
-    pub fn mtrr_get_variable_mtrr_worker<'a>(
+    fn mtrr_get_variable_mtrr_worker<'a>(
         &mut self,
         mtrr_setting: Option<&MtrrSettings>,
         variable_mtrr_ranges_count: u32,
         variable_mtrr_settings: &'a mut MtrrVariableSettings,
     ) -> &'a mut MtrrVariableSettings {
-        assert!(variable_mtrr_ranges_count <= variable_mtrr_settings.mtrr.len() as u32);
+        assert!(variable_mtrr_ranges_count <= MTRR_NUMBER_OF_VARIABLE_MTRR as u32);
 
         for index in 0..variable_mtrr_ranges_count as usize {
             if let Some(settings) = mtrr_setting {
@@ -418,8 +397,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @retval RETURN_UNSUPPORTED  The requested range or cache type was invalid
     //                              for the fixed MTRRs.
     //
-    //
-    pub fn mtrr_lib_program_fixed_mtrr(
+    fn mtrr_lib_program_fixed_mtrr(
         &mut self,
         mem_type: u8,
         base: &mut u64,
@@ -442,9 +420,7 @@ impl<H: HalTrait> MtrrLib<H> {
             msr_index += 1;
         }
 
-        if msr_index == MMTRR_LIB_FIXED_MTRR_TABLE.len() as u32 {
-            return RETURN_UNSUPPORTED;
-        }
+        assert!(msr_index != MMTRR_LIB_FIXED_MTRR_TABLE.len() as u32);
 
         // Find the begin offset in fixed MTRR and calculate byte offset of left shift
         let entry = &MMTRR_LIB_FIXED_MTRR_TABLE[msr_index as usize];
@@ -453,9 +429,7 @@ impl<H: HalTrait> MtrrLib<H> {
         }
 
         left_byte_shift = ((*base - entry.base_address as u64) / entry.length as u64) as u32;
-        if left_byte_shift >= 8 {
-            return RETURN_UNSUPPORTED;
-        }
+        assert!(left_byte_shift < 8);
 
         // Find the end offset in fixed MTRR and calculate byte offset of right shift
         sub_length = entry.length as u64 * (8 - left_byte_shift) as u64;
@@ -505,8 +479,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @return      Number of MTRRs which has been used.
     //
-    //
-    pub fn mtrr_get_memory_attribute_in_variable_mtrr_worker(
+    fn mtrr_get_memory_attribute_in_variable_mtrr_worker(
         &mut self,
         variable_mtrr_settings: &MtrrVariableSettings,
         variable_mtrr_ranges_count: usize,
@@ -554,8 +527,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @return      Number of MTRRs which has been used.
     //
-    //
-    pub fn mtrr_lib_get_raw_variable_ranges(
+    fn mtrr_lib_get_raw_variable_ranges(
         &mut self,
         variable_mtrr_settings: &MtrrVariableSettings,
         variable_mtrr_ranges_count: usize,
@@ -594,7 +566,6 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @return                       The return value of this parameter indicates the
     //                                number of MTRRs which has been used.
-    //
     //
     pub fn mtrr_get_memory_attribute_in_variable_mtrr(
         &mut self,
@@ -635,7 +606,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @return The least alignment of the Address.
     //
-    pub fn mtrr_lib_biggest_alignment(address: u64, alignment0: u64) -> u64 {
+    fn mtrr_lib_biggest_alignment(address: u64, alignment0: u64) -> u64 {
         if address == 0 {
             alignment0
         } else {
@@ -658,7 +629,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @retval TRUE  Left precedes Right.
     //  @retval FALSE Left doesn't precede Right.
     //
-    pub fn mtrr_lib_type_left_precede_right(left: MtrrMemoryCacheType, right: MtrrMemoryCacheType) -> bool {
+    fn mtrr_lib_type_left_precede_right(left: MtrrMemoryCacheType, right: MtrrMemoryCacheType) -> bool {
         left == MtrrMemoryCacheType::Uncacheable
             || (left == MtrrMemoryCacheType::WriteThrough && right == MtrrMemoryCacheType::WriteBack)
     }
@@ -671,8 +642,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @param[out]  MtrrValidBitsMask     The mask for the valid bit of the MTRR
     //  @param[out]  MtrrValidAddressMask  The valid address mask for the MTRR
     //
-    //
-    pub fn mtrr_lib_initialize_mtrr_mask(&mut self, mtrr_valid_bits_mask: &mut u64, mtrr_valid_address_mask: &mut u64) {
+    fn mtrr_lib_initialize_mtrr_mask(&mut self, mtrr_valid_bits_mask: &mut u64, mtrr_valid_address_mask: &mut u64) {
         let mut vir_phy_address_size = CpuidVirPhyAddressSizeEax::default();
 
         // Get maximum CPUID function number
@@ -723,8 +693,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @param[in]  MtrrType1    The first kind of Memory type
     //  @param[in]  MtrrType2    The second kind of memory type
     //
-    //
-    pub fn mtrr_lib_precedence(
+    fn mtrr_lib_precedence(
         &mut self,
         mtrr_type1: MtrrMemoryCacheType,
         mtrr_type2: MtrrMemoryCacheType,
@@ -732,6 +701,11 @@ impl<H: HalTrait> MtrrLib<H> {
         if mtrr_type1 == mtrr_type2 {
             return mtrr_type1;
         }
+
+        assert!(
+            Self::mtrr_lib_type_left_precede_right(mtrr_type1, mtrr_type2)
+                || Self::mtrr_lib_type_left_precede_right(mtrr_type2, mtrr_type1)
+        );
 
         if Self::mtrr_lib_type_left_precede_right(mtrr_type1, mtrr_type2) {
             mtrr_type1
@@ -752,8 +726,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @return Memory cache type of the specific address
     //
-    //
-    pub fn mtrr_get_memory_attribute_by_address_worker(
+    fn mtrr_get_memory_attribute_by_address_worker(
         &mut self,
         mtrr_settings: Option<&MtrrSettings>,
         address: u64,
@@ -791,6 +764,7 @@ impl<H: HalTrait> MtrrLib<H> {
         }
 
         let variable_mtrr_ranges_count = self.get_variable_mtrr_count_worker();
+        assert!(variable_mtrr_ranges_count <= MTRR_NUMBER_OF_VARIABLE_MTRR as u32);
 
         let mut variable_mtrr_settings = Default::default();
         self.mtrr_get_variable_mtrr_worker(mtrr_settings, variable_mtrr_ranges_count, &mut variable_mtrr_settings);
@@ -836,7 +810,6 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @param[in]  Address   The specific address
     //
     //  @return Memory cache type of the specific address
-    //
     //
     pub fn mtrr_get_memory_attribute(&mut self, address: u64) -> MtrrMemoryCacheType {
         if !self.is_mtrr_supported() {
@@ -1058,10 +1031,10 @@ impl<H: HalTrait> MtrrLib<H> {
         // Initialize vertices and weights
         for index in start..=stop {
             vertices[index as usize].visited = false;
-            mandatory = weight[M(start, index, vertex_count)];
+            mandatory = weight[m(start, index, vertex_count)];
             vertices[index as usize].weight = mandatory;
             if mandatory != MAX_WEIGHT {
-                optional = if include_optional { weight[O(start, index, vertex_count)] } else { 0 };
+                optional = if include_optional { weight[o(start, index, vertex_count)] } else { 0 };
                 vertices[index as usize].weight += optional;
                 assert!(vertices[index as usize].weight >= optional);
             }
@@ -1074,10 +1047,12 @@ impl<H: HalTrait> MtrrLib<H> {
             // Update the weight from the shortest vertex to other unvisited vertices
             for index in (start + 1)..=stop {
                 if !vertices[index as usize].visited {
-                    mandatory = weight[M(min_i, index, vertex_count)];
+                    mandatory = weight[m(min_i, index, vertex_count)];
                     if mandatory != MAX_WEIGHT {
-                        optional = if include_optional { weight[O(min_i, index, vertex_count)] } else { 0 };
-                        if min_weight + mandatory + optional <= vertices[index as usize].weight {
+                        optional = if include_optional { weight[o(min_i, index, vertex_count)] } else { 0 };
+                        if min_weight as u32 + mandatory as u32 + optional as u32
+                            <= vertices[index as usize].weight as u32
+                        {
                             vertices[index as usize].weight = min_weight + mandatory + optional;
                             vertices[index as usize].previous = min_i; // Previous is start-based
                         }
@@ -1174,7 +1149,6 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @retval RETURN_SUCCESS          The subtractive path is calculated successfully.
     //  @retval RETURN_OUT_OF_RESOURCES The MTRR setting array is full.
     //
-    //
     fn mtrr_lib_calculate_subtractive_path(
         &mut self,
         default_type: MtrrMemoryCacheType,
@@ -1202,8 +1176,8 @@ impl<H: HalTrait> MtrrLib<H> {
         let lowest_precedent_type = Self::mtrr_lib_lowest_type(precedent_types);
 
         if mtrrs.is_none() {
-            weight[M(start, stop, vertex_count)] = if lowest_type == default_type { 0 } else { 1 };
-            weight[O(start, stop, vertex_count)] = if lowest_type == default_type { 1 } else { 0 };
+            weight[m(start, stop, vertex_count)] = if lowest_type == default_type { 0 } else { 1 };
+            weight[o(start, stop, vertex_count)] = if lowest_type == default_type { 1 } else { 0 };
         }
 
         // Add all high level ranges
@@ -1282,7 +1256,7 @@ impl<H: HalTrait> MtrrLib<H> {
                     // while - loop is to split the range to MTRR - compliant aligned range.
 
                     if mtrrs_is_none {
-                        weight[M(start, stop, vertex_count)] += (sub_stop - sub_start) as u8;
+                        weight[m(start, stop, vertex_count)] += (sub_stop - sub_start) as u8;
                     } else {
                         while sub_start != sub_stop {
                             let status = self.mtrr_lib_append_variable_mtrr(
@@ -1304,7 +1278,7 @@ impl<H: HalTrait> MtrrLib<H> {
                     self.mtrr_lib_calculate_least_mtrrs(vertex_count, vertices, weight, sub_start, sub_stop, true);
 
                     if mtrrs_is_none {
-                        weight[M(start, stop, vertex_count)] += vertices[sub_stop as usize].weight;
+                        weight[m(start, stop, vertex_count)] += vertices[sub_stop as usize].weight;
                     } else {
                         // When we need to collect the optimal path from SubStart to SubStop
                         while sub_stop != sub_start {
@@ -1312,7 +1286,7 @@ impl<H: HalTrait> MtrrLib<H> {
                             let pre = vertices[cur as usize].previous;
                             sub_stop = pre;
 
-                            if weight[M(pre, cur, vertex_count)] + weight[O(pre, cur, vertex_count)] != 0 {
+                            if weight[m(pre, cur, vertex_count)] + weight[o(pre, cur, vertex_count)] != 0 {
                                 let status = self.mtrr_lib_append_variable_mtrr(
                                     mtrrs_unwrap,
                                     mtrr_capacity.unwrap(),
@@ -1491,6 +1465,9 @@ impl<H: HalTrait> MtrrLib<H> {
             ranges[range_count - 1].base_address + ranges[range_count - 1].length,
             vertex_count
         );
+
+        assert!(vertex_count < u16::MAX as usize);
+
         let required_scratch_size =
             vertex_count * core::mem::size_of::<MtrrLibAddress>() + vertex_count * vertex_count + 1;
         if *scratch_size < required_scratch_size {
@@ -1511,11 +1488,11 @@ impl<H: HalTrait> MtrrLib<H> {
             unsafe {
                 // println!("vertex_index: {}", vertex_index);
                 // Set optional weight between vertices and self->self to 0
-                let mm = M(vertex_index as u16, 0, vertex_count as u16);
+                let mm = m(vertex_index as u16, 0, vertex_count as u16);
                 // println!("mm: {}", mm);
                 write_bytes(&mut weight[mm] as *mut u8, 0, vertex_index + 1);
                 // Set mandatory weight between vertices to MAX_WEIGHT
-                let mm2 = M(vertex_index as u16, vertex_index as u16 + 1, vertex_count as u16);
+                let mm2 = m(vertex_index as u16, vertex_index as u16 + 1, vertex_count as u16);
                 // println!("mm2: {}", mm2);
                 write_bytes(&mut weight[mm2] as *mut u8, MAX_WEIGHT, vertex_count - vertex_index - 1);
             }
@@ -1524,11 +1501,11 @@ impl<H: HalTrait> MtrrLib<H> {
         // Set mandatory weight and optional weight for adjacent vertices
         for vertex_index in 0..vertex_count - 1 {
             if vertices[vertex_index].mem_type != default_type as u8 {
-                weight[M(vertex_index as u16, vertex_index as u16 + 1, vertex_count as u16)] = 1;
-                weight[O(vertex_index as u16, vertex_index as u16 + 1, vertex_count as u16)] = 0;
+                weight[m(vertex_index as u16, vertex_index as u16 + 1, vertex_count as u16)] = 1;
+                weight[o(vertex_index as u16, vertex_index as u16 + 1, vertex_count as u16)] = 0;
             } else {
-                weight[M(vertex_index as u16, vertex_index as u16 + 1, vertex_count as u16)] = 0;
-                weight[O(vertex_index as u16, vertex_index as u16 + 1, vertex_count as u16)] = 1;
+                weight[m(vertex_index as u16, vertex_index as u16 + 1, vertex_count as u16)] = 0;
+                weight[o(vertex_index as u16, vertex_index as u16 + 1, vertex_count as u16)] = 1;
             }
         }
 
@@ -1544,7 +1521,7 @@ impl<H: HalTrait> MtrrLib<H> {
                         break;
                     }
 
-                    if weight[M(start as u16, stop as u16, vertex_count as u16)] == MAX_WEIGHT && is_pow2(length) {
+                    if weight[m(start as u16, stop as u16, vertex_count as u16)] == MAX_WEIGHT && is_pow2(length) {
                         let mut type_out = 0;
 
                         if self.mtrr_lib_get_number_of_types(
@@ -1597,7 +1574,7 @@ impl<H: HalTrait> MtrrLib<H> {
             let mut type_count = MAX_UINT8;
             let mut mem_type = 0;
 
-            if weight[M(start, stop, vertex_count as u16)] != 0 {
+            if weight[m(start, stop, vertex_count as u16)] != 0 {
                 type_count = self.mtrr_lib_get_number_of_types(
                     ranges,
                     range_count,
@@ -2220,8 +2197,8 @@ impl<H: HalTrait> MtrrLib<H> {
         ranges: &[MtrrMemoryRange],
         range_count: usize,
     ) -> ReturnStatus {
-        let mut status = RETURN_SUCCESS;
-        let mut variable_mtrr_needed = false;
+        let mut status;
+        let mut variable_mtrr_needed;
         let mut modified: bool;
         let mut base_address: u64;
         let mut length: u64;
@@ -2232,9 +2209,8 @@ impl<H: HalTrait> MtrrLib<H> {
         let mut variable_mtrr_settings = MtrrVariableSettings::default();
         let mut working_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_WORKING_MTRR_RANGES] =
             [MtrrMemoryRange::default(); MTRR_NUMBER_OF_WORKING_MTRR_RANGES];
-        let mut working_range_count: usize = 0;
-        let variable_setting = MtrrVariableSettings::default();
-        let mut original_variable_mtrr_ranges_count: u32 = 0;
+        let mut working_range_count;
+        let mut original_variable_mtrr_ranges_count;
         let firmware_variable_mtrr_count: u32;
         let mut working_variable_mtrr_ranges_count: usize = 0;
         let mut original_variable_mtrr_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_VARIABLE_MTRR] = Default::default();
@@ -2354,6 +2330,9 @@ impl<H: HalTrait> MtrrLib<H> {
                     working_ranges[index].mem_type as u8,
                 );
             }
+
+            assert!(original_variable_mtrr_ranges_count >= self.hal.get_pcd_cpu_number_of_reserved_variable_mtrrs());
+
             firmware_variable_mtrr_count =
                 original_variable_mtrr_ranges_count - self.hal.get_pcd_cpu_number_of_reserved_variable_mtrrs();
             assert!(working_range_count <= 2 * firmware_variable_mtrr_count as usize + 1);
@@ -2396,7 +2375,7 @@ impl<H: HalTrait> MtrrLib<H> {
                     ranges[index].mem_type,
                 );
                 if status == RETURN_ALREADY_STARTED {
-                    status = RETURN_SUCCESS;
+                    // status = RETURN_SUCCESS;
                 } else if status == RETURN_OUT_OF_RESOURCES {
                     return status;
                 } else {
@@ -2543,7 +2522,6 @@ impl<H: HalTrait> MtrrLib<H> {
 
                 if mtrr_setting_is_some {
                     mtrr_setting_unwrap.variables.mtrr[index] = variable_setting;
-                    println!("mtrr_setting_is_some");
                 } else {
                     if !mtrr_context_valid {
                         self.mtrr_lib_pre_mtrr_change(&mut mtrr_context);
@@ -2666,10 +2644,9 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @param[in]  VariableMtrrSettings   A buffer to hold variable MTRRs content.
     //
-    //
-    pub fn mtrr_set_variable_mtrr_worker(&mut self, variable_mtrr_settings: &MtrrVariableSettings) {
+    fn mtrr_set_variable_mtrr_worker(&mut self, variable_mtrr_settings: &MtrrVariableSettings) {
         let variable_mtrr_ranges_count = self.get_variable_mtrr_count_worker();
-        // assert!(variable_mtrr_ranges_count <= MTRR_NUMBER_OF_VARIABLE_MTRR);
+        assert!(variable_mtrr_ranges_count <= MTRR_NUMBER_OF_VARIABLE_MTRR as u32);
 
         for index in 0..variable_mtrr_ranges_count {
             let base_msr = MSR_IA32_MTRR_PHYSBASE0 + (index << 1);
@@ -2685,8 +2662,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @param[in]  FixedSettings  A buffer to hold fixed MTRRs content.
     //
-    //
-    pub fn mtrr_set_fixed_mtrr_worker(&mut self, fixed_settings: &MtrrFixedSettings) {
+    fn mtrr_set_fixed_mtrr_worker(&mut self, fixed_settings: &MtrrFixedSettings) {
         for index in 0..MTRR_NUMBER_OF_FIXED_MTRR {
             let msr = MMTRR_LIB_FIXED_MTRR_TABLE[index].msr;
             let value = fixed_settings.mtrr[index];
@@ -2700,7 +2676,6 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @param[out]  MtrrSetting  A buffer to hold all MTRRs content.
     //
     //  @retval the pointer of MtrrSetting
-    //
     //
     pub fn mtrr_get_all_mtrrs(&mut self, mtrr_setting: &mut MtrrSettings) {
         let mut fixed_mtrr_supported = false;
@@ -2741,7 +2716,6 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @retval The pointer of MtrrSetting
     //
-    //
     pub fn mtrr_set_all_mtrrs(&mut self, mtrr_setting: &MtrrSettings) {
         let mut fixed_mtrr_supported = false;
         let mtrr_def_type = MsrIa32MtrrDefType::from_bits(mtrr_setting.mtrr_def_type);
@@ -2781,7 +2755,6 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @retval TRUE  MTRR is supported.
     //  @retval FALSE MTRR is not supported.
     //
-    //
     pub fn is_mtrr_supported(&mut self) -> bool {
         // Assuming the existence of the MtrrLibIsMtrrSupported function
         let mut fixed_mtrr_supported = false;
@@ -2812,7 +2785,6 @@ impl<H: HalTrait> MtrrLib<H> {
         range_count: Option<&mut usize>,
     ) -> ReturnStatus {
         // Define the local structures and variables
-        let mut status = RETURN_SUCCESS;
         let mut local_mtrrs = MtrrSettings::default();
         let mtrrs: &MtrrSettings;
         let mut raw_variable_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_VARIABLE_MTRR] = Default::default();
@@ -2854,7 +2826,7 @@ impl<H: HalTrait> MtrrLib<H> {
             local_ranges[0].mem_type = self.mtrr_get_default_memory_type_worker(Some(mtrrs));
 
             let variable_mtrr_ranges_count = self.get_variable_mtrr_count_worker();
-            assert!(variable_mtrr_ranges_count <= mtrr_setting.unwrap().variables.mtrr.len() as u32);
+            assert!(variable_mtrr_ranges_count <= MTRR_NUMBER_OF_VARIABLE_MTRR as u32);
 
             self.mtrr_lib_get_raw_variable_ranges(
                 &mtrrs.variables,
@@ -2864,7 +2836,7 @@ impl<H: HalTrait> MtrrLib<H> {
                 &mut raw_variable_ranges,
             );
 
-            status = self.mtrr_lib_apply_variable_mtrrs(
+            let status = self.mtrr_lib_apply_variable_mtrrs(
                 &raw_variable_ranges,
                 variable_mtrr_ranges_count,
                 &mut local_ranges,
@@ -2908,7 +2880,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @param  MtrrSetting    A buffer holding all MTRRs content.
     //
-    pub fn mtrr_debug_print_all_mtrrs_worker(&mut self, mtrr_setting: Option<&MtrrSettings>) {
+    fn mtrr_debug_print_all_mtrrs_worker(&mut self, mtrr_setting: Option<&MtrrSettings>) {
         // Initialize local variables
         let mut local_mtrrs = MtrrSettings::default();
         let mtrrs: &MtrrSettings;
@@ -2979,14 +2951,12 @@ impl<H: HalTrait> MtrrLib<H> {
         }
     }
 
-    //
     //  This function prints all MTRRs for debugging.
-    //
     pub fn mtrr_debug_print_all_mtrrs(&mut self) {
         self.mtrr_debug_print_all_mtrrs_worker(None);
     }
 
-    #[cfg(feature = "test-code")]
+    #[cfg(test)]
     pub fn mtrr_drop_hal(self) -> H {
         self.hal
     }

@@ -1,4 +1,3 @@
-
 pub fn lshift_u64(value: u64, shift: u32) -> u64 {
     value << shift
 }

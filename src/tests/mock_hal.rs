@@ -2,30 +2,30 @@
 use core::arch::asm;
 use core::arch::x86_64::CpuidResult;
 
-use mtrr::hal::HalTrait;
-use mtrr::mtrr::MtrrLib;
-use mtrr::structs::CpuidStructuredExtendedFeatureFlagsEcx;
-use mtrr::structs::CpuidVersionInfoEdx;
-use mtrr::structs::CpuidVirPhyAddressSizeEax;
-use mtrr::structs::MsrIa32MtrrDefType;
-use mtrr::structs::MsrIa32MtrrPhysbaseRegister;
-use mtrr::structs::MsrIa32MtrrPhysmaskRegister;
-use mtrr::structs::MsrIa32MtrrcapRegister;
-use mtrr::structs::MsrIa32TmeActivateRegister;
-use mtrr::structs::CPUID_EXTENDED_FUNCTION;
-use mtrr::structs::CPUID_SIGNATURE;
-use mtrr::structs::CPUID_VERSION_INFO;
-use mtrr::structs::CPUID_VIR_PHY_ADDRESS_SIZE;
-use mtrr::structs::MSR_IA32_MTRRCAP;
-use mtrr::structs::MSR_IA32_MTRR_DEF_TYPE;
-use mtrr::structs::MSR_IA32_MTRR_PHYSBASE0;
-use mtrr::structs::MSR_IA32_MTRR_PHYSMASK0;
-use mtrr::structs::MSR_IA32_TME_ACTIVATE;
-use mtrr::structs::MTRR_NUMBER_OF_FIXED_MTRR;
-use mtrr::structs::MTRR_NUMBER_OF_VARIABLE_MTRR;
+use crate::hal::HalTrait;
+use crate::mtrr::MtrrLib;
+use crate::structs::CpuidStructuredExtendedFeatureFlagsEcx;
+use crate::structs::CpuidVersionInfoEdx;
+use crate::structs::CpuidVirPhyAddressSizeEax;
+use crate::structs::MsrIa32MtrrDefType;
+use crate::structs::MsrIa32MtrrPhysbaseRegister;
+use crate::structs::MsrIa32MtrrPhysmaskRegister;
+use crate::structs::MsrIa32MtrrcapRegister;
+use crate::structs::MsrIa32TmeActivateRegister;
+use crate::structs::CPUID_EXTENDED_FUNCTION;
+use crate::structs::CPUID_SIGNATURE;
+use crate::structs::CPUID_VERSION_INFO;
+use crate::structs::CPUID_VIR_PHY_ADDRESS_SIZE;
+use crate::structs::MSR_IA32_MTRRCAP;
+use crate::structs::MSR_IA32_MTRR_DEF_TYPE;
+use crate::structs::MSR_IA32_MTRR_PHYSBASE0;
+use crate::structs::MSR_IA32_MTRR_PHYSMASK0;
+use crate::structs::MSR_IA32_TME_ACTIVATE;
+use crate::structs::MTRR_NUMBER_OF_FIXED_MTRR;
+use crate::structs::MTRR_NUMBER_OF_VARIABLE_MTRR;
+use crate::tests::M_FIXED_MTRRS_INDEX;
 
-use crate::common::structs::MtrrLibSystemParameter;
-use crate::common::structs::M_FIXED_MTRRS_INDEX;
+use super::MtrrLibSystemParameter;
 
 pub fn create_mtrr_lib_with_mock_hal(hal: MockHal) -> MtrrLib<MockHal> {
     let mtrr_lib = MtrrLib::new(hal);

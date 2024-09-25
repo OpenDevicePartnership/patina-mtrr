@@ -6,12 +6,5 @@ edition = "2021"
 [dependencies]
 bitfield-struct = "0.8.0"
 
-[features]
-# This feature is needed for running integration test to exclude read/write of
-# CR3 registers. cargo test --features "test-code"
-test-code = []
-std=[]
-
-
 [dev-dependencies]
 rand = "0.8"

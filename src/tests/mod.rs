@@ -1,15 +1,15 @@
-use mtrr::{
-    structs::{
-        MtrrMemoryCacheType, MSR_IA32_MTRR_FIX16K_80000, MSR_IA32_MTRR_FIX16K_A0000,
-        MSR_IA32_MTRR_FIX4K_C0000, MSR_IA32_MTRR_FIX4K_C8000, MSR_IA32_MTRR_FIX4K_D0000, MSR_IA32_MTRR_FIX4K_D8000,
-        MSR_IA32_MTRR_FIX4K_E0000, MSR_IA32_MTRR_FIX4K_E8000, MSR_IA32_MTRR_FIX4K_F0000, MSR_IA32_MTRR_FIX4K_F8000,
-        MSR_IA32_MTRR_FIX64K_00000,
-    },
+use crate::structs::{
+    MtrrMemoryCacheType, MSR_IA32_MTRR_FIX16K_80000, MSR_IA32_MTRR_FIX16K_A0000, MSR_IA32_MTRR_FIX4K_C0000,
+    MSR_IA32_MTRR_FIX4K_C8000, MSR_IA32_MTRR_FIX4K_D0000, MSR_IA32_MTRR_FIX4K_D8000, MSR_IA32_MTRR_FIX4K_E0000,
+    MSR_IA32_MTRR_FIX4K_E8000, MSR_IA32_MTRR_FIX4K_F0000, MSR_IA32_MTRR_FIX4K_F8000, MSR_IA32_MTRR_FIX64K_00000,
 };
 
-pub const SCRATCH_BUFFER_SIZE: usize = 16 * 1024; // 16KB equivalent
+mod mock_hal;
+mod mtrr_tests;
+mod support;
 
 #[repr(C)]
+#[derive(Debug, Clone)]
 pub struct MtrrLibSystemParameter {
     pub physical_address_bits: u8,
     pub mtrr_supported: bool,
@@ -232,17 +232,3 @@ pub const M_FIXED_MTRRS_INDEX: [u32; 11] = [
     MSR_IA32_MTRR_FIX4K_F0000,
     MSR_IA32_MTRR_FIX4K_F8000,
 ];
-
-#[derive(Copy, Clone)]
-struct MtrrLibTestContext<'a> {
-    system_parameter: &'a MtrrLibSystemParameter,
-}
-
-#[derive(Copy, Clone)]
-struct MtrrLibGetFirmwareVariableMtrrCountContext<'a> {
-    number_of_reserved_variable_mtrrs: u32,
-    system_parameter: &'a MtrrLibSystemParameter,
-}
-
-// Static array for cache descriptions
-static CACHE_DESCRIPTION: &'static [&str] = &["UC", "WC", "N/A", "N/A", "WT", "WP", "WB"];

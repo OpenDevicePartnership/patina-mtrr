@@ -4,7 +4,7 @@ use bitfield_struct::bitfield;
 
 // Firmware needs to reserve 2 MTRRs for OS.
 // Note: It is replaced by PCD PcdCpuNumberOfReservedVariableMtrrs.
-const RESERVED_FIRMWARE_VARIABLE_MTRR_NUMBER: usize = 2;
+// const RESERVED_FIRMWARE_VARIABLE_MTRR_NUMBER: usize = 2;
 
 pub const MSR_IA32_MTRRCAP: u32 = 0x000000FE; // Example MSR index for MSR_IA32_MTRRCAP
 pub const MSR_IA32_MTRR_DEF_TYPE: u32 = 0x000002FF;
@@ -20,7 +20,6 @@ pub const SIZE_16KB: u32 = 0x00004000;
 pub const SIZE_4KB: u32 = 0x00001000;
 pub const OR_SEED: u64 = 0x0101010101010101;
 pub const CLEAR_SEED: u64 = 0xFFFFFFFFFFFFFFFF;
-pub const MAX_WEIGHT: u8 = u8::MAX; // MAX_UINT8 in C maps to u8::MAX in Rust
 pub const SCRATCH_BUFFER_SIZE: usize = 4 * SIZE_4KB as usize;
 
 // Fixed MTRR msr

@@ -112,7 +112,7 @@ impl HalTrait for Hal {
 
     /// Read CR3 register.
     fn asm_read_cr3(&mut self) -> u64 {
-        let mut value = 0u64;
+        let mut value;
 
         unsafe {
             asm!("mov {}, cr3", out(reg) value, options(nostack, preserves_flags));
@@ -132,7 +132,7 @@ impl HalTrait for Hal {
     /// Read CR4 register.
     #[inline(always)]
     fn asm_read_cr4(&mut self) -> u64 {
-        let mut value = 0u64;
+        let mut value;
 
         unsafe {
             asm!("mov {}, cr4", out(reg) value, options(nostack, preserves_flags));
