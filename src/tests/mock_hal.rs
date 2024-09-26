@@ -134,7 +134,7 @@ impl HalTrait for MockHal {
     }
 
     #[inline(always)]
-    fn get_interrupt_state(&mut self) -> bool {
+    fn get_interrupt_state(&self) -> bool {
         self.interrupt_state
     }
 
@@ -144,7 +144,7 @@ impl HalTrait for MockHal {
     }
 
     /// Read CR3 register.
-    fn asm_read_cr3(&mut self) -> u64 {
+    fn asm_read_cr3(&self) -> u64 {
         self.cr3
     }
 
@@ -156,13 +156,13 @@ impl HalTrait for MockHal {
 
     /// Read CR4 register.
     #[inline(always)]
-    fn asm_read_cr4(&mut self) -> u64 {
+    fn asm_read_cr4(&self) -> u64 {
         self.cr4
     }
 
     fn cpu_flush_tlb(&mut self) {}
 
-    fn asm_read_msr64(&mut self, msr_index: u32) -> u64 {
+    fn asm_read_msr64(&self, msr_index: u32) -> u64 {
         for i in 0..self.fixed_mtrrs_value.len() {
             if msr_index == M_FIXED_MTRRS_INDEX[i] {
                 return self.fixed_mtrrs_value[i];
@@ -245,11 +245,11 @@ impl HalTrait for MockHal {
         newvalue
     }
 
-    fn asm_cpuid(&mut self, function: u32) -> CpuidResult {
+    fn asm_cpuid(&self, function: u32) -> CpuidResult {
         self.asm_cpuid_ex(function, 0)
     }
 
-    fn asm_cpuid_ex(&mut self, function: u32, _sub_function: u32) -> CpuidResult {
+    fn asm_cpuid_ex(&self, function: u32, _sub_function: u32) -> CpuidResult {
         const CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS: u32 = 0x07;
         let mut result = CpuidResult { eax: 0, ebx: 0, ecx: 0, edx: 0 };
 

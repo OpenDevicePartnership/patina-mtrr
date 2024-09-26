@@ -11,17 +11,17 @@ pub trait HalTrait {
     fn asm_disable_cache(&mut self);
     fn asm_enable_cache(&mut self);
     fn set_interrupt_state(&mut self, interrupt_state: bool);
-    fn get_interrupt_state(&mut self) -> bool;
+    fn get_interrupt_state(&self) -> bool;
     fn asm_write_cr3(&mut self, value: u64);
-    fn asm_read_cr3(&mut self) -> u64;
+    fn asm_read_cr3(&self) -> u64;
     fn asm_write_cr4(&mut self, value: u64);
-    fn asm_read_cr4(&mut self) -> u64;
+    fn asm_read_cr4(&self) -> u64;
     fn cpu_flush_tlb(&mut self);
-    fn asm_read_msr64(&mut self, msr: u32) -> u64;
+    fn asm_read_msr64(&self, msr: u32) -> u64;
     fn asm_write_msr64(&mut self, msr: u32, value: u64);
     fn asm_msr_and_then_or_64(&mut self, index: u32, and_data: u64, or_data: u64) -> u64;
-    fn asm_cpuid(&mut self, function: u32) -> CpuidResult;
-    fn asm_cpuid_ex(&mut self, function: u32, sub_function: u32) -> CpuidResult;
+    fn asm_cpuid(&self, function: u32) -> CpuidResult;
+    fn asm_cpuid_ex(&self, function: u32, sub_function: u32) -> CpuidResult;
     fn get_pcd_cpu_number_of_reserved_variable_mtrrs(&self) -> u32;
 }
 
@@ -93,7 +93,7 @@ impl HalTrait for Hal {
     }
 
     #[inline(always)]
-    fn get_interrupt_state(&mut self) -> bool {
+    fn get_interrupt_state(&self) -> bool {
         let r: u64;
 
         unsafe {
@@ -111,7 +111,7 @@ impl HalTrait for Hal {
     }
 
     /// Read CR3 register.
-    fn asm_read_cr3(&mut self) -> u64 {
+    fn asm_read_cr3(&self) -> u64 {
         let mut value;
 
         unsafe {
@@ -131,7 +131,7 @@ impl HalTrait for Hal {
 
     /// Read CR4 register.
     #[inline(always)]
-    fn asm_read_cr4(&mut self) -> u64 {
+    fn asm_read_cr4(&self) -> u64 {
         let mut value;
 
         unsafe {
@@ -147,7 +147,7 @@ impl HalTrait for Hal {
         self.asm_write_cr3(value);
     }
 
-    fn asm_read_msr64(&mut self, msr: u32) -> u64 {
+    fn asm_read_msr64(&self, msr: u32) -> u64 {
         let (mut _high, mut _low): (u32, u32) = (0, 0);
         unsafe {
             asm!(
@@ -180,11 +180,11 @@ impl HalTrait for Hal {
         newvalue
     }
 
-    fn asm_cpuid(&mut self, function: u32) -> CpuidResult {
+    fn asm_cpuid(&self, function: u32) -> CpuidResult {
         unsafe { __cpuid(function) }
     }
 
-    fn asm_cpuid_ex(&mut self, function: u32, sub_function: u32) -> CpuidResult {
+    fn asm_cpuid_ex(&self, function: u32, sub_function: u32) -> CpuidResult {
         unsafe { __cpuid_count(function, sub_function) }
     }
 

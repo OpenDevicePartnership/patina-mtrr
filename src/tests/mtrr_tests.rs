@@ -312,7 +312,7 @@ fn unit_test_is_mtrr_supported() {
     system_parameter.mtrr_supported = false;
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
-    let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+    let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
     assert!(!mtrrlib.is_mtrr_supported());
 
     // MTRR capability on in CPUID leaf, but no variable or fixed MTRRs.
@@ -321,7 +321,7 @@ fn unit_test_is_mtrr_supported() {
     system_parameter.fixed_mtrr_supported = false;
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
-    let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+    let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
     assert!(!mtrrlib.is_mtrr_supported());
 
     // MTRR capability on in CPUID leaf, but no variable MTRRs.
@@ -330,7 +330,7 @@ fn unit_test_is_mtrr_supported() {
     system_parameter.fixed_mtrr_supported = true;
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
-    let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+    let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
     assert!(mtrrlib.is_mtrr_supported());
 
     // MTRR capability on in CPUID leaf, but no fixed MTRRs.
@@ -339,7 +339,7 @@ fn unit_test_is_mtrr_supported() {
     system_parameter.fixed_mtrr_supported = false;
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
-    let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+    let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
     assert!(mtrrlib.is_mtrr_supported());
 
     // MTRR capability on in CPUID leaf with both variable and fixed MTRRs.
@@ -348,7 +348,7 @@ fn unit_test_is_mtrr_supported() {
     system_parameter.fixed_mtrr_supported = true;
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
-    let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+    let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
     assert!(mtrrlib.is_mtrr_supported());
 }
 
@@ -363,7 +363,7 @@ fn unit_test_get_variable_mtrr_count() {
     while system_parameter.variable_mtrr_count <= MTRR_NUMBER_OF_VARIABLE_MTRR as u32 {
         let mut hal = MockHal::new();
         hal.initialize_mtrr_regs(&system_parameter);
-        let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+        let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
         let res = mtrrlib.get_variable_mtrr_count();
         assert_eq!(res, 0);
         system_parameter.variable_mtrr_count += 1;
@@ -377,7 +377,7 @@ fn unit_test_get_variable_mtrr_count() {
     while system_parameter.variable_mtrr_count <= MTRR_NUMBER_OF_VARIABLE_MTRR as u32 {
         let mut hal = MockHal::new();
         hal.initialize_mtrr_regs(&system_parameter);
-        let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+        let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
         let res = mtrrlib.get_variable_mtrr_count();
         assert_eq!(res, system_parameter.variable_mtrr_count);
         system_parameter.variable_mtrr_count += 1;
@@ -388,7 +388,7 @@ fn unit_test_get_variable_mtrr_count() {
     let _ = panic::catch_unwind(|| {
         let mut hal = MockHal::new();
         hal.initialize_mtrr_regs(&system_parameter);
-        let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+        let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
         let _ = mtrrlib.get_variable_mtrr_count();
     });
 
@@ -397,7 +397,7 @@ fn unit_test_get_variable_mtrr_count() {
     let _ = panic::catch_unwind(|| {
         let mut hal = MockHal::new();
         hal.initialize_mtrr_regs(&system_parameter);
-        let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+        let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
         let _ = mtrrlib.get_variable_mtrr_count();
     });
 }
@@ -412,7 +412,7 @@ fn unit_test_get_firmware_variable_mtrr_count() {
         let mut hal = MockHal::new();
         hal.initialize_mtrr_regs(&system_parameter);
         hal.set_pcd_cpu_number_of_reserved_variable_mtrrs(reserved_mtrr);
-        let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+        let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
         let res = mtrrlib.get_firmware_variable_mtrr_count();
         assert_eq!(res, system_parameter.variable_mtrr_count - reserved_mtrr);
     }
@@ -422,7 +422,7 @@ fn unit_test_get_firmware_variable_mtrr_count() {
         let mut hal = MockHal::new();
         hal.initialize_mtrr_regs(&system_parameter);
         hal.set_pcd_cpu_number_of_reserved_variable_mtrrs(reserved_mtrr);
-        let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+        let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
         let res = mtrrlib.get_firmware_variable_mtrr_count();
         assert_eq!(res, 0);
     }
@@ -431,7 +431,7 @@ fn unit_test_get_firmware_variable_mtrr_count() {
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
     hal.set_pcd_cpu_number_of_reserved_variable_mtrrs(u32::MAX);
-    let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+    let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
     let res = mtrrlib.get_firmware_variable_mtrr_count();
     assert_eq!(res, 0);
 
@@ -440,7 +440,7 @@ fn unit_test_get_firmware_variable_mtrr_count() {
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
     hal.set_pcd_cpu_number_of_reserved_variable_mtrrs(2);
-    let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+    let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
     let res = mtrrlib.get_firmware_variable_mtrr_count();
     assert_eq!(res, 0);
 
@@ -450,7 +450,7 @@ fn unit_test_get_firmware_variable_mtrr_count() {
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
     hal.set_pcd_cpu_number_of_reserved_variable_mtrrs(2);
-    let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+    let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
     let res = mtrrlib.get_firmware_variable_mtrr_count();
     assert_eq!(res, system_parameter.variable_mtrr_count - 2);
 
@@ -461,7 +461,7 @@ fn unit_test_get_firmware_variable_mtrr_count() {
         let mut hal = MockHal::new();
         hal.initialize_mtrr_regs(&system_parameter);
         hal.set_pcd_cpu_number_of_reserved_variable_mtrrs(2);
-        let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+        let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
         let _ = mtrrlib.get_firmware_variable_mtrr_count();
     });
 }
@@ -489,7 +489,7 @@ fn unit_test_mtrr_get_fixed_mtrr() {
             expected_mtrr_fixed_settings.mtrr[msr_index] = msr_value;
             hal.asm_write_msr64(M_FIXED_MTRRS_INDEX[msr_index], msr_value);
         }
-        let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+        let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
         let res = mtrrlib.mtrr_get_fixed_mtrr(&mut fixed_settings);
         assert!(res.mtrr == expected_mtrr_fixed_settings.mtrr)
     }
@@ -500,7 +500,7 @@ fn unit_test_mtrr_get_fixed_mtrr() {
     let mut fixed_settings = MtrrFixedSettings::default();
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
-    let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+    let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
     let res = mtrrlib.mtrr_get_fixed_mtrr(&mut fixed_settings);
     assert!(res.mtrr == expected_mtrr_fixed_settings.mtrr);
 
@@ -511,7 +511,7 @@ fn unit_test_mtrr_get_fixed_mtrr() {
     let mut fixed_settings = MtrrFixedSettings::default();
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
-    let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+    let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
     let res = mtrrlib.mtrr_get_fixed_mtrr(&mut fixed_settings);
     assert!(res.mtrr == expected_mtrr_fixed_settings.mtrr);
 }
@@ -530,7 +530,7 @@ fn unit_test_mtrr_get_all_mtrrs() {
     expected_mtrr_settings.mtrr_def_type = MsrIa32MtrrDefType::default().with_e(true).with_fe(false).into_bits();
     set_randomly_generated_mtrr_settings(&mut hal, &system_parameter, &mut expected_mtrr_settings);
     let mut mtrr_settings = MtrrSettings::default();
-    let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+    let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
     mtrrlib.mtrr_get_all_mtrrs(&mut mtrr_settings);
     assert!(mtrr_settings.fixed == expected_mtrr_settings.fixed);
     assert!(mtrr_settings.variables == expected_mtrr_settings.variables);
@@ -544,7 +544,7 @@ fn unit_test_mtrr_get_all_mtrrs() {
     expected_mtrr_settings.mtrr_def_type = MsrIa32MtrrDefType::default().with_e(true).with_fe(true).into_bits();
     set_randomly_generated_mtrr_settings(&mut hal, &system_parameter, &mut expected_mtrr_settings);
     let mut mtrr_settings = MtrrSettings::default();
-    let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+    let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
     mtrrlib.mtrr_get_all_mtrrs(&mut mtrr_settings);
     assert!(mtrr_settings.fixed == expected_mtrr_settings.fixed);
     assert!(mtrr_settings.variables == expected_mtrr_settings.variables);
@@ -558,7 +558,7 @@ fn unit_test_mtrr_get_all_mtrrs() {
     expected_mtrr_settings.mtrr_def_type = MsrIa32MtrrDefType::default().with_e(true).with_fe(true).into_bits();
     // set_randomly_generated_mtrr_settings(&mut hal, &system_parameter, &mut expected_mtrr_settings);
     let mut mtrr_settings = MtrrSettings::default();
-    let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+    let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
     mtrrlib.mtrr_get_all_mtrrs(&mut mtrr_settings);
     assert!(mtrr_settings.fixed == expected_mtrr_settings.fixed);
     assert!(mtrr_settings.variables == expected_mtrr_settings.variables);
@@ -570,7 +570,7 @@ fn unit_test_mtrr_get_all_mtrrs() {
         let mut mtrr_settings = MtrrSettings::default();
         let mut hal = MockHal::new();
         hal.initialize_mtrr_regs(&system_parameter);
-        let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+        let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
         mtrrlib.mtrr_get_all_mtrrs(&mut mtrr_settings);
     });
 }
@@ -616,7 +616,7 @@ fn unit_test_mtrr_set_all_mtrrs() {
 
     // we need access the hal to cross verify the MSR values. Hence we need to
     // drop it from mtrrlib
-    let mut hal = mtrrlib.mtrr_drop_hal();
+    let hal = mtrrlib.mtrr_drop_hal();
 
     assert_eq!(hal.asm_read_msr64(MSR_IA32_MTRR_DEF_TYPE), expected_mtrr_settings.mtrr_def_type);
     for index in 0..system_parameter.variable_mtrr_count {
@@ -661,7 +661,7 @@ fn unit_test_mtrr_get_memory_attribute_in_variable_mtrr() {
     // println!("valid_mtrr_bits_mask: {:x}", valid_mtrr_bits_mask);
     // println!("valid_mtrr_address_mask: {:x}", valid_mtrr_address_mask);
 
-    let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+    let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
     let mut variable_mtrr = [VariableMtrr::default(); MTRR_NUMBER_OF_VARIABLE_MTRR];
     mtrrlib.mtrr_get_memory_attribute_in_variable_mtrr(
         valid_mtrr_bits_mask,
@@ -691,7 +691,7 @@ fn unit_test_mtrr_get_memory_attribute_in_variable_mtrr() {
     let expected_variable_mtrr = [VariableMtrr::default(); MTRR_NUMBER_OF_VARIABLE_MTRR];
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
-    let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+    let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
     mtrrlib.mtrr_get_memory_attribute_in_variable_mtrr(
         valid_mtrr_bits_mask,
         valid_mtrr_address_mask,
@@ -706,7 +706,7 @@ fn unit_test_mtrr_get_memory_attribute_in_variable_mtrr() {
         let mut variable_mtrr = [VariableMtrr::default(); MTRR_NUMBER_OF_VARIABLE_MTRR];
         let mut hal = MockHal::new();
         hal.initialize_mtrr_regs(&system_parameter);
-        let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+        let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
         mtrrlib.mtrr_get_memory_attribute_in_variable_mtrr(
             valid_mtrr_bits_mask,
             valid_mtrr_address_mask,
@@ -732,7 +732,7 @@ fn unit_test_mtrr_get_default_memory_type() {
         system_parameter.default_cache_type = cache_type;
         let mut hal = MockHal::new();
         hal.initialize_mtrr_regs(&system_parameter);
-        let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+        let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
         let result = mtrrlib.mtrr_get_default_memory_type();
         assert_eq!(result, system_parameter.default_cache_type);
     }
@@ -741,7 +741,7 @@ fn unit_test_mtrr_get_default_memory_type() {
     system_parameter.mtrr_supported = false;
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
-    let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+    let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
     let result = mtrrlib.mtrr_get_default_memory_type();
     assert_eq!(result, MtrrMemoryCacheType::Uncacheable);
 
@@ -750,7 +750,7 @@ fn unit_test_mtrr_get_default_memory_type() {
     system_parameter.fixed_mtrr_supported = false;
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
-    let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+    let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
     let result = mtrrlib.mtrr_get_default_memory_type();
     assert_eq!(result, system_parameter.default_cache_type);
 
@@ -760,7 +760,7 @@ fn unit_test_mtrr_get_default_memory_type() {
     system_parameter.variable_mtrr_count = 0;
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
-    let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal);
+    let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
     let result = mtrrlib.mtrr_get_default_memory_type();
     assert_eq!(result, system_parameter.default_cache_type);
 }
@@ -826,28 +826,28 @@ fn unit_test_invalid_memory_layouts_impl(system_parameter: &MtrrLibSystemParamet
 
 #[test]
 fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes() {
-    // let system_parameters: [MtrrLibSystemParameter; 21] = [
-    //     MtrrLibSystemParameter::new(38, true, true, MtrrMemoryCacheType::Uncacheable, 12, 0),
-    //     MtrrLibSystemParameter::new(38, true, true, MtrrMemoryCacheType::WriteBack, 12, 0),
-    //     MtrrLibSystemParameter::new(38, true, true, MtrrMemoryCacheType::WriteThrough, 12, 0),
-    //     MtrrLibSystemParameter::new(38, true, true, MtrrMemoryCacheType::WriteProtected, 12, 0),
-    //     MtrrLibSystemParameter::new(38, true, true, MtrrMemoryCacheType::WriteCombining, 12, 0),
-    //     MtrrLibSystemParameter::new(42, true, true, MtrrMemoryCacheType::Uncacheable, 12, 0),
-    //     MtrrLibSystemParameter::new(42, true, true, MtrrMemoryCacheType::WriteBack, 12, 0),
-    //     MtrrLibSystemParameter::new(42, true, true, MtrrMemoryCacheType::WriteThrough, 12, 0),
-    //     MtrrLibSystemParameter::new(42, true, true, MtrrMemoryCacheType::WriteProtected, 12, 0),
-    //     MtrrLibSystemParameter::new(42, true, true, MtrrMemoryCacheType::WriteCombining, 12, 0),
-    //     MtrrLibSystemParameter::new(48, true, true, MtrrMemoryCacheType::Uncacheable, 12, 0),
+    // let system_parameters: [MtrrLibSystemParameter; 1] = [
+    //     // MtrrLibSystemParameter::new(38, true, true, MtrrMemoryCacheType::Uncacheable, 12, 0),
+    //     // MtrrLibSystemParameter::new(38, true, true, MtrrMemoryCacheType::WriteBack, 12, 0),
+    //     // MtrrLibSystemParameter::new(38, true, true, MtrrMemoryCacheType::WriteThrough, 12, 0),
+    //     // MtrrLibSystemParameter::new(38, true, true, MtrrMemoryCacheType::WriteProtected, 12, 0),
+    //     // MtrrLibSystemParameter::new(38, true, true, MtrrMemoryCacheType::WriteCombining, 12, 0),
+    //     // MtrrLibSystemParameter::new(42, true, true, MtrrMemoryCacheType::Uncacheable, 12, 0),
+    //     // MtrrLibSystemParameter::new(42, true, true, MtrrMemoryCacheType::WriteBack, 12, 0),
+    //     // MtrrLibSystemParameter::new(42, true, true, MtrrMemoryCacheType::WriteThrough, 12, 0),
+    //     // MtrrLibSystemParameter::new(42, true, true, MtrrMemoryCacheType::WriteProtected, 12, 0),
+    //     // MtrrLibSystemParameter::new(42, true, true, MtrrMemoryCacheType::WriteCombining, 12, 0),
+    //     // MtrrLibSystemParameter::new(48, true, true, MtrrMemoryCacheType::Uncacheable, 12, 0),
     //     MtrrLibSystemParameter::new(48, true, true, MtrrMemoryCacheType::WriteBack, 12, 0),
-    //     MtrrLibSystemParameter::new(48, true, true, MtrrMemoryCacheType::WriteThrough, 12, 0),
-    //     MtrrLibSystemParameter::new(48, true, true, MtrrMemoryCacheType::WriteProtected, 12, 0),
-    //     MtrrLibSystemParameter::new(48, true, true, MtrrMemoryCacheType::WriteCombining, 12, 0),
-    //     MtrrLibSystemParameter::new(48, true, false, MtrrMemoryCacheType::Uncacheable, 12, 0),
-    //     MtrrLibSystemParameter::new(48, true, false, MtrrMemoryCacheType::WriteBack, 12, 0),
-    //     MtrrLibSystemParameter::new(48, true, false, MtrrMemoryCacheType::WriteThrough, 12, 0),
-    //     MtrrLibSystemParameter::new(48, true, false, MtrrMemoryCacheType::WriteProtected, 12, 0),
-    //     MtrrLibSystemParameter::new(48, true, false, MtrrMemoryCacheType::WriteCombining, 12, 0),
-    //     MtrrLibSystemParameter::new(48, true, true, MtrrMemoryCacheType::WriteBack, 12, 7),
+    //     // MtrrLibSystemParameter::new(48, true, true, MtrrMemoryCacheType::WriteThrough, 12, 0),
+    //     // MtrrLibSystemParameter::new(48, true, true, MtrrMemoryCacheType::WriteProtected, 12, 0),
+    //     // MtrrLibSystemParameter::new(48, true, true, MtrrMemoryCacheType::WriteCombining, 12, 0),
+    //     // MtrrLibSystemParameter::new(48, true, false, MtrrMemoryCacheType::Uncacheable, 12, 0),
+    //     // MtrrLibSystemParameter::new(48, true, false, MtrrMemoryCacheType::WriteBack, 12, 0),
+    //     // MtrrLibSystemParameter::new(48, true, false, MtrrMemoryCacheType::WriteThrough, 12, 0),
+    //     // MtrrLibSystemParameter::new(48, true, false, MtrrMemoryCacheType::WriteProtected, 12, 0),
+    //     // MtrrLibSystemParameter::new(48, true, false, MtrrMemoryCacheType::WriteCombining, 12, 0),
+    //     // MtrrLibSystemParameter::new(48, true, true, MtrrMemoryCacheType::WriteBack, 12, 7),
     // ];
 
     let iterations = 1;
@@ -918,23 +918,20 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_setti
     raw_mtrr_range_count = uc_count + wt_count + wb_count + wp_count + wc_count;
     expected_memory_ranges_count = expected_memory_ranges.len() as usize;
 
-    //     // TESTCODE BEGIN
-    // let raw_mtrr_range: [MtrrMemoryRange; 12] = [
-    //     MtrrMemoryRange::new(0x0000800000000000, 0x0000200000000000, MtrrMemoryCacheType::Uncacheable),
-    //     MtrrMemoryRange::new(0x0000589840960000, 0x0000000000002000, MtrrMemoryCacheType::Uncacheable),
-    //     MtrrMemoryRange::new(0x0000180000000000, 0x0000000010000000, MtrrMemoryCacheType::Uncacheable),
-    //     MtrrMemoryRange::new(0x0000800000000000, 0x0000000040000000, MtrrMemoryCacheType::Uncacheable),
-    //     MtrrMemoryRange::new(0x0000b80000000000, 0x0000000010000000, MtrrMemoryCacheType::WriteThrough),
-    //     MtrrMemoryRange::new(0x0000630000000000, 0x0000000002000000, MtrrMemoryCacheType::WriteThrough),
-    //     MtrrMemoryRange::new(0x0000400000000000, 0x0000400000000000, MtrrMemoryCacheType::WriteThrough),
-    //     MtrrMemoryRange::new(0x00004c09b0000000, 0x0000000010000000, MtrrMemoryCacheType::WriteBack),
-    //     MtrrMemoryRange::new(0x0000c32800000000, 0x0000000008000000, MtrrMemoryCacheType::WriteProtected),
-    //     MtrrMemoryRange::new(0x0000c00000000000, 0x0000004000000000, MtrrMemoryCacheType::WriteCombining),
-    //     MtrrMemoryRange::new(0x0000e70000000000, 0x0000000000020000, MtrrMemoryCacheType::WriteCombining),
-    //     MtrrMemoryRange::new(0x0000b13000000000, 0x0000000008000000, MtrrMemoryCacheType::WriteCombining),
+    // //     // TESTCODE BEGIN
+    // let raw_mtrr_range: [MtrrMemoryRange; 9] = [
+    //     MtrrMemoryRange::new(0x0000f00000000000, 0x0000004000000000, MtrrMemoryCacheType::Uncacheable),
+    //     MtrrMemoryRange::new(0x0000efcc00000000, 0x0000000020000000, MtrrMemoryCacheType::Uncacheable),
+    //     MtrrMemoryRange::new(0x0000e70000000000, 0x0000000000800000, MtrrMemoryCacheType::Uncacheable),
+    //     MtrrMemoryRange::new(0x000073c000000000, 0x0000000010000000, MtrrMemoryCacheType::Uncacheable),
+    //     MtrrMemoryRange::new(0x0000800000000000, 0x0000800000000000, MtrrMemoryCacheType::WriteThrough),
+    //     MtrrMemoryRange::new(0x0000400000000000, 0x0000100000000000, MtrrMemoryCacheType::WriteThrough),
+    //     MtrrMemoryRange::new(0x0000800000000000, 0x0000100000000000, MtrrMemoryCacheType::WriteBack),
+    //     MtrrMemoryRange::new(0x0000060000000000, 0x0000004000000000, MtrrMemoryCacheType::WriteBack),
+    //     MtrrMemoryRange::new(0x0000600000000000, 0x0000080000000000, MtrrMemoryCacheType::WriteCombining),
     //     ];
-    //   raw_mtrr_range_count = raw_mtrr_range.len() as u32;
-    //     // TESTCODE end
+    //   let raw_mtrr_range_count = raw_mtrr_range.len() as u32;
+    // //     // TESTCODE end
 
     println!("--- Raw MTRR Range [{}]---", raw_mtrr_range_count);
     dump_memory_ranges(&raw_mtrr_range, raw_mtrr_range_count as usize);
@@ -1045,7 +1042,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr
     let mut returned_memory_ranges_count: usize;
 
     println!(
-        "------------unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_settings begin------------"
+        "------------unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr_settings begin------------"
     );
     println!("system_parameter: {:?}", system_parameter);
 
@@ -1171,6 +1168,6 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr
     );
 
     println!(
-        "------------unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_settings end------------"
+        "------------unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr_settings end------------"
     );
 }
