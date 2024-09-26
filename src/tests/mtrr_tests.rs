@@ -982,6 +982,8 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_setti
         &mut actual_variable_mtrr_usage,
     );
 
+    println!("--- Raw MTRR Range [{}]---", raw_mtrr_range_count);
+    dump_memory_ranges(&raw_mtrr_range, raw_mtrr_range_count as usize);
     println!("--- Actual Memory Ranges [{}] ---", actual_memory_ranges_count);
     dump_memory_ranges(&actual_memory_ranges, actual_memory_ranges_count);
     println!("--- Expected Memory Ranges [{}] ---", expected_memory_ranges_count);
@@ -1139,6 +1141,8 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr
         &mut actual_variable_mtrr_usage,
     );
 
+    println!("--- Raw MTRR Range [{}]---", raw_mtrr_range_count);
+    dump_memory_ranges(&raw_mtrr_range, raw_mtrr_range_count as usize);
     println!("--- Actual Memory Ranges [{}] ---", actual_memory_ranges_count);
     dump_memory_ranges(&actual_memory_ranges, actual_memory_ranges_count);
     println!("--- Expected Memory Ranges [{}] ---", expected_memory_ranges_count);

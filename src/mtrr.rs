@@ -121,11 +121,15 @@ impl<H: HalTrait> MtrrLib<H> {
     }
 
     //
-    //  Worker function returns the variable MTRR count for the CPU.
+    //  Returns the variable MTRR count for the CPU.
     //
     //  @return Variable MTRR count
     //
-    fn get_variable_mtrr_count_worker(&self) -> u32 {
+    pub fn get_variable_mtrr_count(&self) -> u32 {
+        if !self.is_mtrr_supported() {
+            return 0;
+        }
+
         // Read the MSR to get the MTRR capabilities
         let mtrr_cap = self.hal.asm_read_msr64(MSR_IA32_MTRRCAP);
 
@@ -139,36 +143,6 @@ impl<H: HalTrait> MtrrLib<H> {
     }
 
     //
-    //  Returns the variable MTRR count for the CPU.
-    //
-    //  @return Variable MTRR count
-    //
-    pub fn get_variable_mtrr_count(&self) -> u32 {
-        if !self.is_mtrr_supported() {
-            return 0;
-        }
-
-        self.get_variable_mtrr_count_worker()
-    }
-
-    //
-    //  Worker function returns the firmware usable variable MTRR count for the CPU.
-    //
-    //  @return Firmware usable variable MTRR count
-    //
-    fn get_firmware_variable_mtrr_count_worker(&self) -> u32 {
-        // Assuming the existence of these functions
-        let variable_mtrr_ranges_count = self.get_variable_mtrr_count_worker();
-        let reserved_mtrr_number = self.hal.get_pcd_cpu_number_of_reserved_variable_mtrrs(); // VINEEL: PCD
-
-        if variable_mtrr_ranges_count < reserved_mtrr_number {
-            return 0;
-        }
-
-        variable_mtrr_ranges_count - reserved_mtrr_number
-    }
-
-    //
     //  Returns the firmware usable variable MTRR count for the CPU.
     //
     //  @return Firmware usable variable MTRR count
@@ -178,7 +152,15 @@ impl<H: HalTrait> MtrrLib<H> {
             return 0;
         }
 
-        self.get_firmware_variable_mtrr_count_worker()
+        // Assuming the existence of these functions
+        let variable_mtrr_ranges_count = self.get_variable_mtrr_count();
+        let reserved_mtrr_number = self.hal.get_pcd_cpu_number_of_reserved_variable_mtrrs(); // VINEEL: PCD
+
+        if variable_mtrr_ranges_count < reserved_mtrr_number {
+            return 0;
+        }
+
+        variable_mtrr_ranges_count - reserved_mtrr_number
     }
 
     //
@@ -299,10 +281,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @retval The pointer of FixedSettings
     //
-    fn mtrr_get_fixed_mtrr_worker<'a>(
-        &self,
-        fixed_settings: &'a mut MtrrFixedSettings,
-    ) -> &'a mut MtrrFixedSettings {
+    fn mtrr_get_fixed_mtrr_worker<'a>(&self, fixed_settings: &'a mut MtrrFixedSettings) -> &'a mut MtrrFixedSettings {
         for (index, entry) in MMTRR_LIB_FIXED_MTRR_TABLE.iter().enumerate() {
             if index < MTRR_NUMBER_OF_FIXED_MTRR {
                 fixed_settings.mtrr[index] = self.hal.asm_read_msr64(entry.msr);
@@ -560,11 +539,11 @@ impl<H: HalTrait> MtrrLib<H> {
         // Initialize the variable MTRR settings
         let mut variable_mtrr_settings = MtrrVariableSettings::default();
 
-        let ranges_count = self.get_variable_mtrr_count_worker();
+        let ranges_count = self.get_variable_mtrr_count();
         // Get the variable MTRR settings
         self.mtrr_get_variable_mtrr_worker(None, ranges_count, &mut variable_mtrr_settings);
 
-        let firmware_mtrr_count = self.get_firmware_variable_mtrr_count_worker();
+        let firmware_mtrr_count = self.get_firmware_variable_mtrr_count();
 
         // Get the memory attributes in the variable MTRR
         self.mtrr_get_memory_attribute_in_variable_mtrr_worker(
@@ -742,7 +721,7 @@ impl<H: HalTrait> MtrrLib<H> {
             }
         }
 
-        let variable_mtrr_ranges_count = self.get_variable_mtrr_count_worker();
+        let variable_mtrr_ranges_count = self.get_variable_mtrr_count();
         assert!(variable_mtrr_ranges_count <= MTRR_NUMBER_OF_VARIABLE_MTRR as u32);
 
         let mut variable_mtrr_settings = Default::default();
@@ -2622,7 +2601,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @param[in]  VariableMtrrSettings   A buffer to hold variable MTRRs content.
     //
     fn mtrr_set_variable_mtrr_worker(&mut self, variable_mtrr_settings: &MtrrVariableSettings) {
-        let variable_mtrr_ranges_count = self.get_variable_mtrr_count_worker();
+        let variable_mtrr_ranges_count = self.get_variable_mtrr_count();
         assert!(variable_mtrr_ranges_count <= MTRR_NUMBER_OF_VARIABLE_MTRR as u32);
 
         for index in 0..variable_mtrr_ranges_count {
@@ -2765,10 +2744,10 @@ impl<H: HalTrait> MtrrLib<H> {
         let mut local_mtrrs = MtrrSettings::default();
         let mtrrs: &MtrrSettings;
         let mut raw_variable_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_VARIABLE_MTRR] = Default::default();
-        let mut local_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_LOCAL_MTRR_RANGES] =
+        let mut working_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_LOCAL_MTRR_RANGES] =
             [MtrrMemoryRange::default(); MTRR_NUMBER_OF_LOCAL_MTRR_RANGES];
 
-        let mut local_range_count = 1;
+        let mut working_range_count = 1;
         let (mut mtrr_valid_bits_mask, mut mtrr_valid_address_mask) = (0, 0);
 
         // Validate parameters
@@ -2793,16 +2772,18 @@ impl<H: HalTrait> MtrrLib<H> {
 
         // Initialize the MTRR masks
         self.mtrr_lib_initialize_mtrr_mask(&mut mtrr_valid_bits_mask, &mut mtrr_valid_address_mask);
-        local_ranges[0] = MtrrMemoryRange { base_address: 0, length: mtrr_valid_bits_mask + 1, ..Default::default() };
+
+        // Start with the one big range[0, mtrr_valid_bits_mask] and the default memory type
+        working_ranges[0] = MtrrMemoryRange { base_address: 0, length: mtrr_valid_bits_mask + 1, ..Default::default() };
 
         let mtrr_def_type = MsrIa32MtrrDefType::from(mtrrs.mtrr_def_type);
 
         if !mtrr_def_type.e() {
-            local_ranges[0].mem_type = MtrrMemoryCacheType::Uncacheable;
+            working_ranges[0].mem_type = MtrrMemoryCacheType::Uncacheable;
         } else {
-            local_ranges[0].mem_type = self.mtrr_get_default_memory_type_worker(Some(mtrrs));
+            working_ranges[0].mem_type = self.mtrr_get_default_memory_type_worker(Some(mtrrs));
 
-            let variable_mtrr_ranges_count = self.get_variable_mtrr_count_worker();
+            let variable_mtrr_ranges_count = self.get_variable_mtrr_count();
             assert!(variable_mtrr_ranges_count <= MTRR_NUMBER_OF_VARIABLE_MTRR as u32);
 
             Self::mtrr_lib_get_raw_variable_ranges(
@@ -2816,9 +2797,9 @@ impl<H: HalTrait> MtrrLib<H> {
             let status = self.mtrr_lib_apply_variable_mtrrs(
                 &raw_variable_ranges,
                 variable_mtrr_ranges_count,
-                &mut local_ranges,
+                &mut working_ranges,
                 MTRR_NUMBER_OF_LOCAL_MTRR_RANGES,
-                &mut local_range_count,
+                &mut working_range_count,
             );
 
             if status.is_err() {
@@ -2828,23 +2809,22 @@ impl<H: HalTrait> MtrrLib<H> {
             if mtrr_def_type.fe() {
                 let _ = self.mtrr_lib_apply_fixed_mtrrs(
                     &mtrrs.fixed,
-                    &mut local_ranges,
+                    &mut working_ranges,
                     MTRR_NUMBER_OF_LOCAL_MTRR_RANGES,
-                    &mut local_range_count,
+                    &mut working_range_count,
                 );
             }
         }
 
-        if *range_count < local_range_count {
-            *range_count = local_range_count;
+        if *range_count < working_range_count {
+            *range_count = working_range_count;
             return Err(MtrrError::ReturnBufferTooSmall);
         }
 
-        //ranges.copy_from_slice(&local_ranges[..local_range_count]);
-        for i in 0..local_range_count {
-            ranges[i] = local_ranges[i];
+        for i in 0..working_range_count {
+            ranges[i] = working_ranges[i];
         }
-        *range_count = local_range_count;
+        *range_count = working_range_count;
         Ok(())
     }
 
