@@ -282,17 +282,17 @@ pub fn generate_random_cache_type() -> MtrrMemoryCacheType {
 //  @param Ranges      The entire memory ranges.
 //  @param RangeCount  Count of the entire memory ranges.
 //
-fn determine_memory_cache_type(
+fn determine_output_memory_cache_type(
     default_type: MtrrMemoryCacheType,
     range: &mut MtrrMemoryRange,
-    ranges: &[MtrrMemoryRange],
-    range_count: u32,
+    raw_memory_ranges: &[MtrrMemoryRange],
+    raw_memory_ranges_count: u32,
 ) {
     range.mem_type = MtrrMemoryCacheType::Invalid;
-    for index in 0..range_count as usize {
-        if ranges_overlap(range, &ranges[index..index + 1], 1) {
-            if (ranges[index as usize].mem_type as u8) < (range.mem_type as u8) {
-                range.mem_type = ranges[index as usize].mem_type;
+    for index in 0..raw_memory_ranges_count as usize {
+        if ranges_overlap(range, &raw_memory_ranges[index..index + 1], 1) {
+            if (raw_memory_ranges[index as usize].mem_type as u8) < (range.mem_type as u8) {
+                range.mem_type = raw_memory_ranges[index as usize].mem_type;
             }
         }
     }
@@ -504,6 +504,9 @@ fn collect_endpoints(endpoints: &mut Vec<u64>, raw_memory_ranges: &[MtrrMemoryRa
 //
 //  Convert the MTRR BASE/MASK array to memory ranges.
 //
+//  Convert raw unsorted, overlapping ranges to full memory non overlapping
+//  ranges.
+//
 //  @param DefaultType          Default memory type.
 //  @param PhysicalAddressBits  Physical address bits.
 //  @param RawMemoryRanges      Raw memory ranges.
@@ -527,12 +530,58 @@ pub fn get_effective_memory_ranges(
         return;
     }
 
+    // Input: Raw memory ranges example: Unsorted, can be overlapping, do not
+    // cover full memory range.
+
+    //
+    // { 0x0000014000000000, 0x0000000400000000, Uncacheable },
+    // { 0x0000015800000000, 0x0000000800000000, Uncacheable },
+    // { 0x000001dcdfa58000, 0x0000000000001000, Uncacheable },
+    // { 0x0000001c00000000, 0x0000000000100000, WriteThrough },
+    // { 0x0000007600000000, 0x0000000100000000, WriteThrough },
+    // { 0x0000015600000000, 0x0000000000800000, WriteProtected },
+    // { 0x0000018000000000, 0x0000004000000000, WriteProtected },
+    // { 0x0000017848000000, 0x0000000000800000, WriteCombining },
+    // { 0x000000f600000000, 0x0000000000020000, WriteCombining },
+    // { 0x0000003400000000, 0x0000000001000000, WriteCombining },
+    // { 0x000000e000000000, 0x0000000400000000, WriteCombining },
+    //
+
+    // Output: Sorted, non-overlapping, covers full memory range, honors the
+    // memory type passed.
+
+    //
+    // { 0x0000000000000000, 0x0000001c00000000, WriteBack },
+    // { 0x0000001c00000000, 0x0000000000100000, WriteThrough },
+    // { 0x0000001c00100000, 0x00000017fff00000, WriteBack },
+    // { 0x0000003400000000, 0x0000000001000000, WriteCombining },
+    // { 0x0000003401000000, 0x00000041ff000000, WriteBack },
+    // { 0x0000007600000000, 0x0000000100000000, WriteThrough },
+    // { 0x0000007700000000, 0x0000006900000000, WriteBack },
+    // { 0x000000e000000000, 0x0000000400000000, WriteCombining },
+    // { 0x000000e400000000, 0x0000001200000000, WriteBack },
+    // { 0x000000f600000000, 0x0000000000020000, WriteCombining },
+    // { 0x000000f600020000, 0x00000049fffe0000, WriteBack },
+    // { 0x0000014000000000, 0x0000000400000000, Uncacheable },
+    // { 0x0000014400000000, 0x0000001200000000, WriteBack },
+    // { 0x0000015600000000, 0x0000000000800000, WriteProtected },
+    // { 0x0000015600800000, 0x00000001ff800000, WriteBack },
+    // { 0x0000015800000000, 0x0000000800000000, Uncacheable },
+    // { 0x0000016000000000, 0x0000001848000000, WriteBack },
+    // { 0x0000017848000000, 0x0000000000800000, WriteCombining },
+    // { 0x0000017848800000, 0x00000007b7800000, WriteBack },
+    // { 0x0000018000000000, 0x0000004000000000, WriteProtected },
+    // { 0x000001c000000000, 0x0000001cdfa58000, WriteBack },
+    // { 0x000001dcdfa58000, 0x0000000000001000, Uncacheable },
+    // { 0x000001dcdfa59000, 0x00000023205a7000, WriteBack },
+
+
     let all_endpoints_count = raw_memory_range_count << 1;
     let mut all_endpoints_inclusive: Vec<u64> = Vec::with_capacity(all_endpoints_count);
     all_endpoints_inclusive.resize(all_endpoints_count, 0);
     let all_range_pieces_count_max = raw_memory_range_count * 3 + 1;
-    let mut all_range_pieces: Vec<MtrrMemoryRange> = Vec::with_capacity(all_range_pieces_count_max);
-    all_range_pieces.resize(all_range_pieces_count_max, MtrrMemoryRange::default());
+    let mut output_ranges: Vec<MtrrMemoryRange> = Vec::with_capacity(all_range_pieces_count_max);
+    output_ranges.resize(all_range_pieces_count_max, MtrrMemoryRange::default());
 
     println!("all_endpoints_count: {} ", all_endpoints_count);
     collect_endpoints(&mut all_endpoints_inclusive, raw_memory_ranges, raw_memory_range_count);
@@ -542,7 +591,7 @@ pub fn get_effective_memory_ranges(
         println!("#### AllEndpointsInclusive[{}] = {:x} \n", i, all_endpoints_inclusive[i]);
     }
 
-    let mut all_range_pieces_count_actual = 0;
+    let mut output_ranges_count = 0;
     for index in 0..all_endpoints_inclusive.len() - 1 {
         let overlap_bit_flag1 =
             get_overlap_bit_flag(raw_memory_ranges, raw_memory_range_count as u32, all_endpoints_inclusive[index]);
@@ -558,41 +607,41 @@ pub fn get_effective_memory_ranges(
         match overlap_flag_relation {
             0 => {
                 // [1, 2]
-                all_range_pieces[all_range_pieces_count_actual].base_address = all_endpoints_inclusive[index];
-                all_range_pieces[all_range_pieces_count_actual].length =
+                output_ranges[output_ranges_count].base_address = all_endpoints_inclusive[index];
+                output_ranges[output_ranges_count].length =
                     all_endpoints_inclusive[index + 1] - all_endpoints_inclusive[index] + 1;
-                all_range_pieces_count_actual += 1;
+                output_ranges_count += 1;
             }
             1 => {
                 // [1, 2)
-                all_range_pieces[all_range_pieces_count_actual].base_address = all_endpoints_inclusive[index];
-                all_range_pieces[all_range_pieces_count_actual].length =
+                output_ranges[output_ranges_count].base_address = all_endpoints_inclusive[index];
+                output_ranges[output_ranges_count].length =
                     (all_endpoints_inclusive[index + 1] - 1) - all_endpoints_inclusive[index] + 1;
-                all_range_pieces_count_actual += 1;
+                output_ranges_count += 1;
             }
             2 => {
                 // (1, 2]
-                all_range_pieces[all_range_pieces_count_actual].base_address = all_endpoints_inclusive[index] + 1;
-                all_range_pieces[all_range_pieces_count_actual].length =
+                output_ranges[output_ranges_count].base_address = all_endpoints_inclusive[index] + 1;
+                output_ranges[output_ranges_count].length =
                     all_endpoints_inclusive[index + 1] - (all_endpoints_inclusive[index] + 1) + 1;
-                all_range_pieces_count_actual += 1;
+                output_ranges_count += 1;
 
                 if !is_endpoint_in_ranges(
                     all_endpoints_inclusive[index],
-                    &all_range_pieces,
-                    all_range_pieces_count_actual,
+                    &output_ranges,
+                    output_ranges_count,
                 ) {
-                    all_range_pieces[all_range_pieces_count_actual].base_address = all_endpoints_inclusive[index];
-                    all_range_pieces[all_range_pieces_count_actual].length = 1;
-                    all_range_pieces_count_actual += 1;
+                    output_ranges[output_ranges_count].base_address = all_endpoints_inclusive[index];
+                    output_ranges[output_ranges_count].length = 1;
+                    output_ranges_count += 1;
                 }
             }
             3 => {
                 // (1, 2)
-                all_range_pieces[all_range_pieces_count_actual].base_address = all_endpoints_inclusive[index] + 1;
-                all_range_pieces[all_range_pieces_count_actual].length =
+                output_ranges[output_ranges_count].base_address = all_endpoints_inclusive[index] + 1;
+                output_ranges[output_ranges_count].length =
                     (all_endpoints_inclusive[index + 1]) - (all_endpoints_inclusive[index] + 1);
-                if all_range_pieces[all_range_pieces_count_actual].length == 0 {
+                if output_ranges[output_ranges_count].length == 0 {
                     // Only in case 3 can exists Length=0, we should skip such "segment".
 
                     // In C, To exit the current switch block and continue the
@@ -602,57 +651,65 @@ pub fn get_effective_memory_ranges(
                     // you a day and a night :-)
                     continue;
                 }
-                all_range_pieces_count_actual += 1;
+                output_ranges_count += 1;
 
                 if !is_endpoint_in_ranges(
                     all_endpoints_inclusive[index],
-                    &all_range_pieces,
-                    all_range_pieces_count_actual,
+                    &output_ranges,
+                    output_ranges_count,
                 ) {
-                    all_range_pieces[all_range_pieces_count_actual].base_address = all_endpoints_inclusive[index];
-                    all_range_pieces[all_range_pieces_count_actual].length = 1;
-                    all_range_pieces_count_actual += 1;
+                    output_ranges[output_ranges_count].base_address = all_endpoints_inclusive[index];
+                    output_ranges[output_ranges_count].length = 1;
+                    output_ranges_count += 1;
                 }
             }
             _ => panic!("Unexpected overlap flag relation"),
         }
     }
 
-    for index in 0..all_range_pieces_count_actual {
-        determine_memory_cache_type(
+    // Up until this point we only created the required output ranges. But
+    // haven't determined their memory types. Now we need to determine the
+    // memory cache type for each range piece. We loop over each output range
+    // and try to check if overlaps with any of the raw memory ranges. If it
+    // does, we set the memory type of the output range to the memory type of
+    // the raw memory range it overlaps with. If it doesn't overlap with any
+    // raw memory range, we set the memory type of the output range to the
+    // default memory type passed to this function.
+    for index in 0..output_ranges_count {
+        determine_output_memory_cache_type(
             default_type,
-            &mut all_range_pieces[index],
+            &mut output_ranges[index],
             raw_memory_ranges,
             raw_memory_range_count as u32,
         );
     }
-    for i in 0..all_range_pieces_count_actual {
+    for i in 0..output_ranges_count {
         println!(
             "#### AllRangePieces[{}] = {:x}, {:x}, {:?} \n",
-            i, all_range_pieces[i].base_address, all_range_pieces[i].length, all_range_pieces[i].mem_type
+            i, output_ranges[i].base_address, output_ranges[i].length, output_ranges[i].mem_type
         );
     }
 
     compact_and_extend_effective_mtrr_memory_ranges(
         default_type,
         physical_address_bits,
-        &mut all_range_pieces,
-        &mut all_range_pieces_count_actual,
+        &mut output_ranges,
+        &mut output_ranges_count,
     );
 
-    println!("all_range_pieces_count_actual: {} ", all_range_pieces_count_actual);
-    for i in 0..all_range_pieces_count_actual {
+    println!("output_ranges_count: {} ", output_ranges_count);
+    for i in 0..output_ranges_count {
         println!(
             "#### AllRangePieces[{}] = {:x}, {:x}, {:?} \n",
-            i, all_range_pieces[i].base_address, all_range_pieces[i].length, all_range_pieces[i].mem_type
+            i, output_ranges[i].base_address, output_ranges[i].length, output_ranges[i].mem_type
         );
     }
     println!("memory_range_count: {} ", *memory_range_count);
-    assert!(*memory_range_count >= all_range_pieces_count_actual);
-    for i in 0..all_range_pieces_count_actual {
-        memory_ranges[i] = all_range_pieces[i];
+    assert!(*memory_range_count >= output_ranges_count);
+    for i in 0..output_ranges_count {
+        memory_ranges[i] = output_ranges[i];
     }
-    *memory_range_count = all_range_pieces_count_actual;
+    *memory_range_count = output_ranges_count;
 }
 
 // Unit tests
