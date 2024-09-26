@@ -175,18 +175,10 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @return  The default MTRR cache type.
     //
     fn mtrr_get_default_memory_type_worker(&self, mtrr_setting: Option<&MtrrSettings>) -> MtrrMemoryCacheType {
-        let mut def_type: MsrIa32MtrrDefType = Default::default();
-
         match mtrr_setting {
-            Some(settings) => {
-                def_type.set_mem_type((settings.mtrr_def_type & 0xFF) as u8);
-            }
-            None => {
-                def_type.set_mem_type((self.hal.asm_read_msr64(MSR_IA32_MTRR_DEF_TYPE) & 0xFF) as u8);
-            }
+            Some(settings) => settings.mtrr_def_type_reg.mem_type().into(),
+            None => ((self.hal.asm_read_msr64(MSR_IA32_MTRR_DEF_TYPE) & 0xFF) as u8).into(),
         }
-
-        def_type.mem_type().into()
     }
 
     //
@@ -690,7 +682,7 @@ impl<H: HalTrait> MtrrLib<H> {
         address: u64,
     ) -> MtrrMemoryCacheType {
         let def_type = if let Some(settings) = mtrr_settings {
-            MsrIa32MtrrDefType::from(settings.mtrr_def_type)
+            MsrIa32MtrrDefType::from(settings.mtrr_def_type_reg)
         } else {
             MsrIa32MtrrDefType::from(self.hal.asm_read_msr64(MSR_IA32_MTRR_DEF_TYPE))
         };
@@ -2442,9 +2434,7 @@ impl<H: HalTrait> MtrrLib<H> {
             if clear_mask != 0 {
                 if mtrr_setting_is_some {
                     // Fixed MTRR is modified, enable fixed MTRR
-                    let mut mtrr_def_type = MsrIa32MtrrDefType::from_bits(mtrr_setting_unwrap.mtrr_def_type);
-                    mtrr_def_type.set_fe(true);
-                    mtrr_setting_unwrap.mtrr_def_type = mtrr_def_type.into_bits();
+                    mtrr_setting_unwrap.mtrr_def_type_reg.set_fe(true);
                     mtrr_setting_unwrap.fixed.mtrr[index] =
                         (mtrr_setting_unwrap.fixed.mtrr[index] & !clear_mask) | or_masks[index];
                 } else {
@@ -2492,9 +2482,7 @@ impl<H: HalTrait> MtrrLib<H> {
 
         if mtrr_setting_is_some {
             // Enable MTRR unconditionally
-            let mut mtrr_def_type = MsrIa32MtrrDefType::from_bits(mtrr_setting_unwrap.mtrr_def_type);
-            mtrr_def_type.set_e(true);
-            mtrr_setting_unwrap.mtrr_def_type = mtrr_def_type.into_bits();
+            mtrr_setting_unwrap.mtrr_def_type_reg.set_e(true);
         } else if mtrr_context_valid {
             self.mtrr_lib_post_mtrr_change(&mut mtrr_context);
         }
@@ -2651,7 +2639,7 @@ impl<H: HalTrait> MtrrLib<H> {
         // Assert that enabling the Fixed MTRR bit when unsupported is not allowed
         assert!(fixed_mtrr_supported || !mtrr_def_type.fe());
 
-        mtrr_setting.mtrr_def_type = mtrr_def_type.into();
+        mtrr_setting.mtrr_def_type_reg = mtrr_def_type.into();
 
         // Get fixed MTRRs if supported
         if mtrr_def_type.fe() {
@@ -2674,7 +2662,6 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     pub fn mtrr_set_all_mtrrs(&mut self, mtrr_setting: &MtrrSettings) {
         let mut fixed_mtrr_supported = false;
-        let mtrr_def_type = MsrIa32MtrrDefType::from_bits(mtrr_setting.mtrr_def_type);
         let mut mtrr_context = MtrrContext::default();
 
         let mut variable_mtrr_ranges_count = 0;
@@ -2688,7 +2675,7 @@ impl<H: HalTrait> MtrrLib<H> {
         self.mtrr_lib_pre_mtrr_change(&mut mtrr_context);
 
         // Assert that enabling Fixed MTRR when unsupported is not allowed
-        assert!(fixed_mtrr_supported || !mtrr_def_type.fe());
+        assert!(fixed_mtrr_supported || !mtrr_setting.mtrr_def_type_reg.fe());
 
         // If hardware supports Fixed MTRR, set Fixed MTRRs
         if fixed_mtrr_supported {
@@ -2699,7 +2686,7 @@ impl<H: HalTrait> MtrrLib<H> {
         self.mtrr_set_variable_mtrr_worker(&mtrr_setting.variables);
 
         // Set MTRR_DEF_TYPE value
-        self.hal.asm_write_msr64(MSR_IA32_MTRR_DEF_TYPE, mtrr_setting.mtrr_def_type);
+        self.hal.asm_write_msr64(MSR_IA32_MTRR_DEF_TYPE, mtrr_setting.mtrr_def_type_reg.into_bits());
 
         // Finalize MTRR change and enable cache
         self.mtrr_lib_post_mtrr_change_enable_cache(&mut mtrr_context);
@@ -2776,7 +2763,7 @@ impl<H: HalTrait> MtrrLib<H> {
         // Start with the one big range[0, mtrr_valid_bits_mask] and the default memory type
         working_ranges[0] = MtrrMemoryRange { base_address: 0, length: mtrr_valid_bits_mask + 1, ..Default::default() };
 
-        let mtrr_def_type = MsrIa32MtrrDefType::from(mtrrs.mtrr_def_type);
+        let mtrr_def_type = MsrIa32MtrrDefType::from(mtrrs.mtrr_def_type_reg);
 
         if !mtrr_def_type.e() {
             working_ranges[0].mem_type = MtrrMemoryCacheType::Uncacheable;
@@ -2869,7 +2856,7 @@ impl<H: HalTrait> MtrrLib<H> {
         // Dump RAW MTRR contents
         println!("MTRR Settings:");
         println!("=============");
-        println!("MTRR Default Type: {:#016x}", mtrrs.mtrr_def_type);
+        println!("MTRR Default Type: {:#016x}", mtrrs.mtrr_def_type_reg.into_bits());
 
         for index in 0..MMTRR_LIB_FIXED_MTRR_TABLE.len() {
             println!("Fixed MTRR[{:02}]   : {:#016x}", index, mtrrs.fixed.mtrr[index]);

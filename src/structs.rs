@@ -133,12 +133,12 @@ pub struct MtrrFixedSettings {
 pub struct MtrrSettings {
     pub fixed: MtrrFixedSettings,
     pub variables: MtrrVariableSettings,
-    pub mtrr_def_type: u64,
+    pub mtrr_def_type_reg: MsrIa32MtrrDefType, // MTRR DefType register
 }
 
 impl MtrrSettings {
-    pub fn new(fixed: MtrrFixedSettings, variables: MtrrVariableSettings, mtrr_def_type: u64) -> Self {
-        Self { fixed, variables, mtrr_def_type }
+    pub fn new(fixed: MtrrFixedSettings, variables: MtrrVariableSettings, mtrr_def_type_reg: MsrIa32MtrrDefType) -> Self {
+        Self { fixed, variables, mtrr_def_type_reg }
     }
 }
 
@@ -177,7 +177,7 @@ impl fmt::Display for MtrrSettings {
         write!(
             f,
             "MTRR Settings:\nFixed MTRRs:\n{}\nVariable MTRRs:\n{}\nMTRR Default Type: {:#018x}",
-            self.fixed, self.variables, self.mtrr_def_type
+            self.fixed, self.variables, self.mtrr_def_type_reg.into_bits()
         )
     }
 }
@@ -267,6 +267,7 @@ pub const MSR_IA32_TME_ACTIVATE: u32 = 0x00000982;
 // MU_BASECORE\MdePkg\Include\Register\Intel\ArchitecturalMsr.h
 
 #[bitfield(u64)]
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub struct MsrIa32MtrrDefType {
     #[bits(3)]
     pub mem_type: u8, // [Bits 2:0] Default Memory Type (3 bits)

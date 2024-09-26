@@ -190,7 +190,7 @@ fn generate_random_memory_type_combination(
 //     dump_memory_ranges(&expected_memory_ranges, expected_memory_ranges_count);
 
 //     // Default cache type is always an INPUT
-//     local_mtrrs.mtrr_def_type = mtrr_get_default_memory_type() as u64;
+//     local_mtrrs.mtrr_def_type_reg = mtrr_get_default_memory_type() as u64;
 //     scratch_size = SCRATCH_BUFFER_SIZE;
 //     mtrrs[0] = &mut local_mtrrs;
 //     mtrrs[1] = &mut MtrrSettings::default();
@@ -270,7 +270,7 @@ fn set_randomly_generated_mtrr_settings(
     expected_mtrrs: &mut MtrrSettings,
 ) {
     // Set Default MTRR Type
-    hal.asm_write_msr64(MSR_IA32_MTRR_DEF_TYPE, expected_mtrrs.mtrr_def_type);
+    hal.asm_write_msr64(MSR_IA32_MTRR_DEF_TYPE, expected_mtrrs.mtrr_def_type_reg.into_bits());
 
     // Randomly generate Variable MTRR BASE/MASK for a specified type and write to MSR
     for index in 0..system_parameter.variable_mtrr_count {
@@ -527,7 +527,7 @@ fn unit_test_mtrr_get_all_mtrrs() {
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
     let mut expected_mtrr_settings = MtrrSettings::default();
-    expected_mtrr_settings.mtrr_def_type = MsrIa32MtrrDefType::default().with_e(true).with_fe(false).into_bits();
+    expected_mtrr_settings.mtrr_def_type_reg = MsrIa32MtrrDefType::default().with_e(true).with_fe(false);
     set_randomly_generated_mtrr_settings(&mut hal, &system_parameter, &mut expected_mtrr_settings);
     let mut mtrr_settings = MtrrSettings::default();
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
@@ -541,7 +541,7 @@ fn unit_test_mtrr_get_all_mtrrs() {
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
     let mut expected_mtrr_settings = MtrrSettings::default();
-    expected_mtrr_settings.mtrr_def_type = MsrIa32MtrrDefType::default().with_e(true).with_fe(true).into_bits();
+    expected_mtrr_settings.mtrr_def_type_reg = MsrIa32MtrrDefType::default().with_e(true).with_fe(true);
     set_randomly_generated_mtrr_settings(&mut hal, &system_parameter, &mut expected_mtrr_settings);
     let mut mtrr_settings = MtrrSettings::default();
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
@@ -555,7 +555,7 @@ fn unit_test_mtrr_get_all_mtrrs() {
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
     let mut expected_mtrr_settings = MtrrSettings::default();
-    expected_mtrr_settings.mtrr_def_type = MsrIa32MtrrDefType::default().with_e(true).with_fe(true).into_bits();
+    expected_mtrr_settings.mtrr_def_type_reg = MsrIa32MtrrDefType::default().with_e(true).with_fe(true);
     // set_randomly_generated_mtrr_settings(&mut hal, &system_parameter, &mut expected_mtrr_settings);
     let mut mtrr_settings = MtrrSettings::default();
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
@@ -583,8 +583,8 @@ fn unit_test_mtrr_set_all_mtrrs() {
 
     let mut expected_mtrr_settings = MtrrSettings::default();
     let mem_type: u8 = generate_random_cache_type() as u8;
-    expected_mtrr_settings.mtrr_def_type =
-        MsrIa32MtrrDefType::default().with_e(true).with_fe(false).with_mem_type(mem_type).into_bits();
+    expected_mtrr_settings.mtrr_def_type_reg =
+        MsrIa32MtrrDefType::default().with_e(true).with_fe(false).with_mem_type(mem_type);
 
     // Randomly generate Variable MTRR BASE/MASK for a specified type and write to MSR
     for index in 0..system_parameter.variable_mtrr_count {
@@ -618,7 +618,7 @@ fn unit_test_mtrr_set_all_mtrrs() {
     // drop it from mtrrlib
     let hal = mtrrlib.mtrr_drop_hal();
 
-    assert_eq!(hal.asm_read_msr64(MSR_IA32_MTRR_DEF_TYPE), expected_mtrr_settings.mtrr_def_type);
+    assert_eq!(hal.asm_read_msr64(MSR_IA32_MTRR_DEF_TYPE), expected_mtrr_settings.mtrr_def_type_reg.into_bits());
     for index in 0..system_parameter.variable_mtrr_count {
         assert_eq!(
             hal.asm_read_msr64(MSR_IA32_MTRR_PHYSBASE0 + (index * 2)),
@@ -949,9 +949,10 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_setti
     dump_memory_ranges(&expected_memory_ranges, expected_memory_ranges_count);
 
     let default_mem_type = mtrrlib.mtrr_get_default_memory_type();
+    let default_mem_type_reg = MsrIa32MtrrDefType::default().with_mem_type(default_mem_type as u8);
 
     let mut mtrr_setting =
-        MtrrSettings::new(MtrrFixedSettings::default(), MtrrVariableSettings::default(), default_mem_type as u64);
+        MtrrSettings::new(MtrrFixedSettings::default(), MtrrVariableSettings::default(), default_mem_type_reg);
     for index in 0..expected_memory_ranges_count {
         println!("--------------------------------------------------");
         println!("--------------------------------------------------");
