@@ -1,14 +1,8 @@
 use core::mem::size_of;
 use core::ptr::write_bytes;
 
-use crate::error::return_error;
-use crate::error::ReturnStatus;
-use crate::error::RETURN_ALREADY_STARTED;
-use crate::error::RETURN_BUFFER_TOO_SMALL;
-use crate::error::RETURN_INVALID_PARAMETER;
-use crate::error::RETURN_OUT_OF_RESOURCES;
-use crate::error::RETURN_SUCCESS;
-use crate::error::RETURN_UNSUPPORTED;
+use crate::error::MtrrError;
+use crate::error::MtrrResult;
 use crate::hal::Hal;
 use crate::hal::HalTrait;
 use crate::structs::CpuidStructuredExtendedFeatureFlagsEcx;
@@ -405,7 +399,7 @@ impl<H: HalTrait> MtrrLib<H> {
         last_msr_index: &mut u32,
         clear_mask: &mut u64,
         or_mask: &mut u64,
-    ) -> ReturnStatus {
+    ) -> MtrrResult<()> {
         let mut msr_index: u32 = last_msr_index.wrapping_add(1);
         let left_byte_shift: u32;
         let right_byte_shift: u32;
@@ -425,7 +419,7 @@ impl<H: HalTrait> MtrrLib<H> {
         // Find the begin offset in fixed MTRR and calculate byte offset of left shift
         let entry = &MMTRR_LIB_FIXED_MTRR_TABLE[msr_index as usize];
         if ((*base - entry.base_address as u64) % entry.length as u64) != 0 {
-            return RETURN_UNSUPPORTED;
+            return Err(MtrrError::ReturnUnsupported);
         }
 
         left_byte_shift = ((*base - entry.base_address as u64) / entry.length as u64) as u32;
@@ -437,7 +431,7 @@ impl<H: HalTrait> MtrrLib<H> {
             right_byte_shift = 0;
         } else {
             if (*length % entry.length as u64) != 0 {
-                return RETURN_UNSUPPORTED;
+                return Err(MtrrError::ReturnUnsupported);
             }
 
             right_byte_shift = 8 - left_byte_shift - (*length / entry.length as u64) as u32;
@@ -462,7 +456,7 @@ impl<H: HalTrait> MtrrLib<H> {
 
         *last_msr_index = msr_index;
 
-        RETURN_SUCCESS
+        Ok(())
     }
 
     //
@@ -845,7 +839,7 @@ impl<H: HalTrait> MtrrLib<H> {
         mut base_address: u64,
         mut length: u64,
         mem_type: MtrrMemoryCacheType,
-    ) -> ReturnStatus {
+    ) -> MtrrResult<()> {
         assert!(length != 0);
 
         let mut length_left = 0;
@@ -885,7 +879,7 @@ impl<H: HalTrait> MtrrLib<H> {
         // println!("modified start_index: {} end_index: {} working_ranges_count: {}", start_index, end_index, *working_ranges_count);
         assert!(start_index != *working_ranges_count && end_index != *working_ranges_count);
         if start_index == end_index && working_ranges[start_index].mem_type == mem_type {
-            return RETURN_ALREADY_STARTED;
+            return Err(MtrrError::ReturnAlreadyStarted);
         }
 
         // The type change may cause merging with previous range or next range.
@@ -917,7 +911,7 @@ impl<H: HalTrait> MtrrLib<H> {
         }
 
         if *working_ranges_count as i64 - delta_count > working_ranges_capacity as i64 {
-            return RETURN_OUT_OF_RESOURCES;
+            return Err(MtrrError::ReturnOutOfResources);
         }
 
         // Reserve space for the new ranges
@@ -950,7 +944,7 @@ impl<H: HalTrait> MtrrLib<H> {
         working_ranges[start_index].length = length;
         working_ranges[start_index].mem_type = mem_type;
 
-        RETURN_SUCCESS
+        Ok(())
     }
 
     //
@@ -1096,9 +1090,9 @@ impl<H: HalTrait> MtrrLib<H> {
         base_address: u64,
         length: u64,
         mem_type: MtrrMemoryCacheType,
-    ) -> ReturnStatus {
+    ) -> MtrrResult<()> {
         if *mtrr_count == mtrr_capacity {
-            return RETURN_OUT_OF_RESOURCES;
+            return Err(MtrrError::ReturnOutOfResources);
         }
 
         mtrrs[*mtrr_count].base_address = base_address;
@@ -1106,7 +1100,7 @@ impl<H: HalTrait> MtrrLib<H> {
         mtrrs[*mtrr_count].mem_type = mem_type;
         *mtrr_count += 1;
 
-        RETURN_SUCCESS
+        Ok(())
     }
 
     //
@@ -1165,7 +1159,7 @@ impl<H: HalTrait> MtrrLib<H> {
         mtrrs: Option<&mut [MtrrMemoryRange]>,
         mtrr_capacity: Option<usize>,
         mtrr_count: Option<&mut usize>,
-    ) -> ReturnStatus {
+    ) -> MtrrResult<()> {
         const MAX_UINT64: u64 = 0xFFFFFFFFFFFFFFFFu64;
 
         let mut base = vertices[start as usize].address;
@@ -1267,7 +1261,7 @@ impl<H: HalTrait> MtrrLib<H> {
                                 vertices[sub_start as usize].length,
                                 vertices[sub_start as usize].mem_type.into(),
                             );
-                            if return_error(status) {
+                            if status.is_err() {
                                 return status;
                             }
                             sub_start += 1;
@@ -1299,7 +1293,7 @@ impl<H: HalTrait> MtrrLib<H> {
                                         vertices[pre as usize].mem_type.into()
                                     },
                                 );
-                                if return_error(status) {
+                                if status.is_err() {
                                     return status;
                                 }
                             }
@@ -1321,7 +1315,7 @@ impl<H: HalTrait> MtrrLib<H> {
                                     mtrr_capacity,
                                     Some(mtrr_count_unwrap),
                                 );
-                                if return_error(status) {
+                                if status.is_err() {
                                     return status;
                                 }
                             }
@@ -1335,7 +1329,7 @@ impl<H: HalTrait> MtrrLib<H> {
             }
         }
 
-        RETURN_SUCCESS
+        Ok(())
     }
 
     //
@@ -1370,7 +1364,7 @@ impl<H: HalTrait> MtrrLib<H> {
         mtrrs: &mut [MtrrMemoryRange],
         mtrr_capacity: usize,
         mtrr_count: &mut usize,
-    ) -> ReturnStatus {
+    ) -> MtrrResult<()> {
         const MAX_WEIGHT: u8 = 0xFF;
         const MAX_UINT8: u8 = 0xFF;
 
@@ -1472,7 +1466,7 @@ impl<H: HalTrait> MtrrLib<H> {
             vertex_count * core::mem::size_of::<MtrrLibAddress>() + vertex_count * vertex_count + 1;
         if *scratch_size < required_scratch_size {
             *scratch_size = required_scratch_size;
-            return RETURN_BUFFER_TOO_SMALL;
+            return Err(MtrrError::ReturnBufferTooSmall);
         }
 
         vertices[vertex_count - 1].address = base1;
@@ -1533,7 +1527,7 @@ impl<H: HalTrait> MtrrLib<H> {
                         ) == type_count
                         {
                             // Update the Weight[Start, Stop] using subtractive path.
-                            self.mtrr_lib_calculate_subtractive_path(
+                            let _ = self.mtrr_lib_calculate_subtractive_path(
                                 default_type,
                                 a0,
                                 ranges,
@@ -1582,7 +1576,7 @@ impl<H: HalTrait> MtrrLib<H> {
                     vertices[stop as usize].address - vertices[start as usize].address,
                     Some(&mut mem_type),
                 );
-                let status_code = self.mtrr_lib_append_variable_mtrr(
+                let status = self.mtrr_lib_append_variable_mtrr(
                     mtrrs,
                     mtrr_capacity,
                     mtrr_count,
@@ -1590,7 +1584,7 @@ impl<H: HalTrait> MtrrLib<H> {
                     vertices[stop as usize].address - vertices[start as usize].address,
                     Self::mtrr_lib_lowest_type(mem_type),
                 );
-                if return_error(status_code) {
+                if status.is_err() {
                     break;
                 }
             }
@@ -1607,7 +1601,7 @@ impl<H: HalTrait> MtrrLib<H> {
                     );
                 }
 
-                let status_code = self.mtrr_lib_calculate_subtractive_path(
+                let status = self.mtrr_lib_calculate_subtractive_path(
                     default_type,
                     a0,
                     ranges,
@@ -1623,7 +1617,7 @@ impl<H: HalTrait> MtrrLib<H> {
                     Some(mtrr_capacity as usize),
                     Some(mtrr_count),
                 );
-                if return_error(status_code) {
+                if status.is_err() {
                     break;
                 }
             }
@@ -1641,7 +1635,7 @@ impl<H: HalTrait> MtrrLib<H> {
         }
 
         println!("-------------------mtrr_lib_calculate_mtrrs end---------------------------");
-        RETURN_SUCCESS
+        Ok(())
     }
 
     //
@@ -1662,8 +1656,7 @@ impl<H: HalTrait> MtrrLib<H> {
         ranges: &mut [MtrrMemoryRange],
         range_capacity: usize,
         range_count: &mut usize,
-    ) -> ReturnStatus {
-        let mut status: ReturnStatus;
+    ) -> MtrrResult<()> {
         let mut base: u64 = 0;
 
         for msr_index in 0..MMTRR_LIB_FIXED_MTRR_TABLE.len() {
@@ -1675,7 +1668,7 @@ impl<H: HalTrait> MtrrLib<H> {
                     mem_type.into()
                 };
 
-                status = self.mtrr_lib_set_memory_type(
+                let status = self.mtrr_lib_set_memory_type(
                     ranges,
                     range_capacity,
                     range_count,
@@ -1684,7 +1677,7 @@ impl<H: HalTrait> MtrrLib<H> {
                     memory_type,
                 );
 
-                if status == RETURN_OUT_OF_RESOURCES {
+                if status.is_err() {
                     return status;
                 }
 
@@ -1693,7 +1686,7 @@ impl<H: HalTrait> MtrrLib<H> {
         }
 
         assert!(base == SIZE_1MB as u64);
-        RETURN_SUCCESS
+        Ok(())
     }
 
     //
@@ -1715,9 +1708,7 @@ impl<H: HalTrait> MtrrLib<H> {
         working_ranges: &mut [MtrrMemoryRange],
         working_ranges_capacity: usize,
         working_ranges_count: &mut usize,
-    ) -> ReturnStatus {
-        let mut status: ReturnStatus;
-
+    ) -> MtrrResult<()> {
         println!("-------------------mtrr_lib_apply_variable_mtrrs start---------------------------");
         // 1. Set WB (Write Back)
         for index in 0..original_variable_mtrr_ranges_count as usize {
@@ -1730,7 +1721,7 @@ impl<H: HalTrait> MtrrLib<H> {
                 range.mem_type
             );
             if range.length != 0 && range.mem_type == MtrrMemoryCacheType::WriteBack {
-                status = self.mtrr_lib_set_memory_type(
+                let status = self.mtrr_lib_set_memory_type(
                     working_ranges,
                     working_ranges_capacity,
                     working_ranges_count,
@@ -1738,7 +1729,7 @@ impl<H: HalTrait> MtrrLib<H> {
                     range.length,
                     range.mem_type,
                 );
-                if status == RETURN_OUT_OF_RESOURCES {
+                if status.is_err() {
                     return status;
                 }
 
@@ -1775,7 +1766,7 @@ impl<H: HalTrait> MtrrLib<H> {
                 && range.mem_type != MtrrMemoryCacheType::WriteBack
                 && range.mem_type != MtrrMemoryCacheType::Uncacheable
             {
-                status = self.mtrr_lib_set_memory_type(
+                let status = self.mtrr_lib_set_memory_type(
                     working_ranges,
                     working_ranges_capacity,
                     working_ranges_count,
@@ -1783,7 +1774,7 @@ impl<H: HalTrait> MtrrLib<H> {
                     range.length,
                     range.mem_type,
                 );
-                if status == RETURN_OUT_OF_RESOURCES {
+                if status.is_err() {
                     return status;
                 }
 
@@ -1810,7 +1801,7 @@ impl<H: HalTrait> MtrrLib<H> {
                 range.mem_type
             );
             if range.length != 0 && range.mem_type == MtrrMemoryCacheType::Uncacheable {
-                status = self.mtrr_lib_set_memory_type(
+                let status = self.mtrr_lib_set_memory_type(
                     working_ranges,
                     working_ranges_capacity,
                     working_ranges_count,
@@ -1818,7 +1809,7 @@ impl<H: HalTrait> MtrrLib<H> {
                     range.length,
                     range.mem_type,
                 );
-                if status == RETURN_OUT_OF_RESOURCES {
+                if status.is_err() {
                     return status;
                 }
                 for index2 in 0..*working_ranges_count {
@@ -1840,7 +1831,7 @@ impl<H: HalTrait> MtrrLib<H> {
         //     );
         // }
         println!("-------------------mtrr_lib_apply_variable_mtrrs end---------------------------");
-        RETURN_SUCCESS
+        Ok(())
     }
 
     //
@@ -1985,7 +1976,7 @@ impl<H: HalTrait> MtrrLib<H> {
         variable_mtrr_ranges: &mut [MtrrMemoryRange],
         variable_mtrr_capacity: usize,
         variable_mtrr_ranges_count: &mut usize,
-    ) -> ReturnStatus {
+    ) -> MtrrResult<()> {
         *variable_mtrr_ranges_count = 0;
 
         let mut biggest_scratch_size = 0;
@@ -2019,7 +2010,7 @@ impl<H: HalTrait> MtrrLib<H> {
                             working_ranges[index].mem_type,
                         );
                         println!(" status: {:?}", status);
-                        if return_error(status) {
+                        if status.is_err() {
                             return status;
                         }
                     }
@@ -2083,15 +2074,15 @@ impl<H: HalTrait> MtrrLib<H> {
                 variable_mtrr_ranges_count,
             );
 
-            if status == RETURN_BUFFER_TOO_SMALL {
+            if let Err(MtrrError::ReturnBufferTooSmall) = status {
                 biggest_scratch_size = core::cmp::max(biggest_scratch_size, actual_scratch_size);
                 // Ignore this error, because we need to calculate the biggest
                 // scratch buffer size.
 
-                status = RETURN_SUCCESS;
+                status = Ok(());
             }
 
-            if return_error(status) {
+            if status.is_err() {
                 return status;
             }
 
@@ -2106,10 +2097,10 @@ impl<H: HalTrait> MtrrLib<H> {
 
         if *scratch_size < biggest_scratch_size {
             *scratch_size = biggest_scratch_size;
-            return RETURN_BUFFER_TOO_SMALL;
+            return Err(MtrrError::ReturnBufferTooSmall);
         }
 
-        RETURN_SUCCESS
+        Ok(())
     }
 
     //
@@ -2133,7 +2124,7 @@ impl<H: HalTrait> MtrrLib<H> {
         mut base_address: u64,
         mut length: u64,
         mem_type: MtrrMemoryCacheType,
-    ) -> ReturnStatus {
+    ) -> MtrrResult<()> {
         let mut msr_index: u32;
         let mut clear_mask: u64 = 0;
         let mut or_mask: u64 = 0;
@@ -2152,7 +2143,7 @@ impl<H: HalTrait> MtrrLib<H> {
                 &mut or_mask,
             );
 
-            if return_error(status) {
+            if status.is_err() {
                 return status;
             }
 
@@ -2160,7 +2151,7 @@ impl<H: HalTrait> MtrrLib<H> {
             or_masks[msr_index as usize] = (or_masks[msr_index as usize] & !clear_mask) | or_mask;
         }
 
-        RETURN_SUCCESS
+        Ok(())
     }
 
     //
@@ -2196,7 +2187,7 @@ impl<H: HalTrait> MtrrLib<H> {
         scratch_size: &mut usize,
         ranges: &[MtrrMemoryRange],
         range_count: usize,
-    ) -> ReturnStatus {
+    ) -> MtrrResult<()> {
         let mut status;
         let mut variable_mtrr_needed;
         let mut modified: bool;
@@ -2253,21 +2244,21 @@ impl<H: HalTrait> MtrrLib<H> {
         if !self
             .mtrr_lib_is_mtrr_supported(Some(&mut fixed_mtrr_supported), Some(&mut original_variable_mtrr_ranges_count))
         {
-            return RETURN_UNSUPPORTED;
+            return Err(MtrrError::ReturnUnsupported);
         }
 
         fixed_mtrr_memory_limit = if fixed_mtrr_supported { SIZE_1MB as u64 } else { 0 };
 
         for index in 0..range_count {
             if ranges[index].length == 0 {
-                return RETURN_INVALID_PARAMETER;
+                return Err(MtrrError::ReturnInvalidParameter);
             }
 
             if (ranges[index].base_address & !mtrr_valid_address_mask) != 0
                 || ((ranges[index].base_address + ranges[index].length) & !mtrr_valid_address_mask) != 0
                     && (ranges[index].base_address + ranges[index].length) != mtrr_valid_bits_mask + 1
             {
-                return RETURN_UNSUPPORTED;
+                return Err(MtrrError::ReturnUnsupported);
             }
 
             if !matches!(
@@ -2278,7 +2269,7 @@ impl<H: HalTrait> MtrrLib<H> {
                     | MtrrMemoryCacheType::WriteProtected
                     | MtrrMemoryCacheType::WriteBack
             ) {
-                return RETURN_INVALID_PARAMETER;
+                return Err(MtrrError::ReturnInvalidParameter);
             }
 
             if ranges[index].base_address + ranges[index].length > fixed_mtrr_memory_limit {
@@ -2316,7 +2307,7 @@ impl<H: HalTrait> MtrrLib<H> {
                 &mut working_range_count,
             );
 
-            if return_error(status) {
+            if status.is_err() {
                 return status;
             }
 
@@ -2348,7 +2339,9 @@ impl<H: HalTrait> MtrrLib<H> {
                     fixed_mtrr_memory_limit,
                     MtrrMemoryCacheType::Uncacheable,
                 );
-                assert!(status != RETURN_OUT_OF_RESOURCES);
+                if status.is_err() {
+                    assert!(status.err().unwrap() != MtrrError::ReturnOutOfResources);
+                }
             }
 
             // 2.3. Apply the new memory attribute settings to Ranges.
@@ -2374,12 +2367,12 @@ impl<H: HalTrait> MtrrLib<H> {
                     length,
                     ranges[index].mem_type,
                 );
-                if status == RETURN_ALREADY_STARTED {
-                    // status = RETURN_SUCCESS;
-                } else if status == RETURN_OUT_OF_RESOURCES {
+                if let Err(MtrrError::ReturnAlreadyStarted) = status {
+                    // status = Ok(());
+                } else if status.is_err() {
                     return status;
                 } else {
-                    if return_error(status) {
+                    if status.is_err() {
                         return status;
                     }
                     modified = true;
@@ -2416,7 +2409,7 @@ impl<H: HalTrait> MtrrLib<H> {
                     (firmware_variable_mtrr_count + 1) as usize,
                     &mut working_variable_mtrr_ranges_count,
                 );
-                if return_error(status) {
+                if status.is_err() {
                     return status;
                 }
 
@@ -2438,7 +2431,7 @@ impl<H: HalTrait> MtrrLib<H> {
                 }
 
                 if working_variable_mtrr_ranges_count > firmware_variable_mtrr_count as usize {
-                    return RETURN_OUT_OF_RESOURCES;
+                    return Err(MtrrError::ReturnOutOfResources);
                 }
 
                 println!("Step 2.6");
@@ -2470,7 +2463,7 @@ impl<H: HalTrait> MtrrLib<H> {
                 ranges[index].length,
                 ranges[index].mem_type,
             );
-            if return_error(status) {
+            if status.is_err() {
                 return status;
             }
         }
@@ -2550,7 +2543,7 @@ impl<H: HalTrait> MtrrLib<H> {
         // Replace `Ok(())` with your actual logic for returning status
         // println!("Result = {:?}", Status);
 
-        RETURN_SUCCESS
+        Ok(())
     }
 
     //
@@ -2588,7 +2581,7 @@ impl<H: HalTrait> MtrrLib<H> {
         base_address: u64,
         length: u64,
         attribute: MtrrMemoryCacheType,
-    ) -> ReturnStatus {
+    ) -> MtrrResult<()> {
         let mut scratch: [u8; SCRATCH_BUFFER_SIZE] = [0; SCRATCH_BUFFER_SIZE];
         let mut scratch_size = scratch.len();
 
@@ -2635,7 +2628,7 @@ impl<H: HalTrait> MtrrLib<H> {
         base_address: u64,
         length: u64,
         attribute: MtrrMemoryCacheType,
-    ) -> ReturnStatus {
+    ) -> MtrrResult<()> {
         self.mtrr_set_memory_attribute_in_mtrr_settings(None, base_address, length, attribute)
     }
 
@@ -2783,7 +2776,7 @@ impl<H: HalTrait> MtrrLib<H> {
         mtrr_setting: Option<&MtrrSettings>,
         ranges: &mut [MtrrMemoryRange],
         range_count: Option<&mut usize>,
-    ) -> ReturnStatus {
+    ) -> MtrrResult<()> {
         // Define the local structures and variables
         let mut local_mtrrs = MtrrSettings::default();
         let mtrrs: &MtrrSettings;
@@ -2796,13 +2789,13 @@ impl<H: HalTrait> MtrrLib<H> {
 
         // Validate parameters
         if range_count.is_none() {
-            return RETURN_INVALID_PARAMETER;
+            return Err(MtrrError::ReturnInvalidParameter);
         }
 
         let range_count = range_count.unwrap();
 
         if *range_count != 0 && ranges.is_empty() {
-            return RETURN_INVALID_PARAMETER;
+            return Err(MtrrError::ReturnInvalidParameter);
         }
 
         // Determine the MTRR settings to use
@@ -2844,12 +2837,12 @@ impl<H: HalTrait> MtrrLib<H> {
                 &mut local_range_count,
             );
 
-            if status != RETURN_SUCCESS {
+            if status.is_err() {
                 return status;
             }
 
             if mtrr_def_type.fe() {
-                self.mtrr_lib_apply_fixed_mtrrs(
+                let _ = self.mtrr_lib_apply_fixed_mtrrs(
                     &mtrrs.fixed,
                     &mut local_ranges,
                     MTRR_NUMBER_OF_LOCAL_MTRR_RANGES,
@@ -2860,7 +2853,7 @@ impl<H: HalTrait> MtrrLib<H> {
 
         if *range_count < local_range_count {
             *range_count = local_range_count;
-            return RETURN_BUFFER_TOO_SMALL;
+            return Err(MtrrError::ReturnBufferTooSmall);
         }
 
         //ranges.copy_from_slice(&local_ranges[..local_range_count]);
@@ -2868,7 +2861,7 @@ impl<H: HalTrait> MtrrLib<H> {
             ranges[i] = local_ranges[i];
         }
         *range_count = local_range_count;
-        RETURN_SUCCESS
+        Ok(())
     }
 
     //
@@ -2904,7 +2897,7 @@ impl<H: HalTrait> MtrrLib<H> {
         range_count = ranges.len();
         status = self.mtrr_get_memory_attributes_in_mtrr_settings(Some(mtrrs), &mut ranges, Some(&mut range_count));
 
-        if status != RETURN_SUCCESS {
+        if status.is_err() {
             println!("MTRR is not enabled.");
             return;
         }

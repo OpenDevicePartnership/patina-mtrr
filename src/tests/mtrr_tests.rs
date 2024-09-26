@@ -1,5 +1,4 @@
 use crate::{
-    error::{return_error, ReturnStatus, RETURN_SUCCESS},
     hal::HalTrait,
     structs::{
         MsrIa32MtrrDefType, MsrIa32MtrrPhysbaseRegister, MsrIa32MtrrPhysmaskRegister, MtrrFixedSettings,
@@ -217,7 +216,7 @@ fn generate_random_memory_type_combination(
 //             );
 //         }
 
-//         assert_eq!(status, RETURN_SUCCESS);
+//         assert!(status.is_ok());
 
 //         if mtrrs[mtrr_index] == MtrrSettings::default() {
 //             local_mtrrs = MtrrSettings::default();
@@ -251,7 +250,7 @@ fn generate_random_memory_type_combination(
 //             &mut returned_memory_ranges,
 //             &mut returned_memory_ranges_count,
 //         );
-//         assert_eq!(status, RETURN_SUCCESS);
+//         assert!(status.is_ok());
 //         println!("--- Returned Memory Ranges [{}] ---", returned_memory_ranges_count);
 //         dump_memory_ranges(&returned_memory_ranges, returned_memory_ranges_count);
 //         verify_memory_ranges(
@@ -810,7 +809,7 @@ fn unit_test_invalid_memory_layouts_impl(system_parameter: &MtrrLibSystemParamet
             ranges[index as usize].length,
             ranges[index as usize].mem_type,
         );
-        assert!(return_error(status));
+        assert!(status.is_err());
     }
 
     let mut scratch_buffer: [u8; SCRATCH_BUFFER_SIZE] = [0u8; SCRATCH_BUFFER_SIZE];
@@ -822,7 +821,7 @@ fn unit_test_invalid_memory_layouts_impl(system_parameter: &MtrrLibSystemParamet
         &ranges,
         range_count as usize,
     );
-    assert!(return_error(status));
+    assert!(status.is_err());
 }
 
 #[test]
@@ -864,7 +863,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes() {
 fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_settings(
     system_parameter: &MtrrLibSystemParameter,
 ) {
-    let mut status: ReturnStatus;
+    let mut status;
     let mut uc_count: u32 = 0;
     let mut wt_count: u32 = 0;
     let mut wb_count: u32 = 0;
@@ -970,7 +969,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_setti
         );
         // println!("After: \n{}", mtrr_setting);
 
-        if return_error(status) {
+        if status.is_err() {
             return;
         }
     }
@@ -1004,7 +1003,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_setti
         &mut returned_memory_ranges[..],
         Some(&mut returned_memory_ranges_count),
     );
-    assert_eq!(status, RETURN_SUCCESS);
+    assert!(status.is_ok());
     println!("--- Returned Memory Ranges [{}] ---", returned_memory_ranges_count);
     dump_memory_ranges(&returned_memory_ranges, returned_memory_ranges_count);
     verify_memory_ranges(
@@ -1022,7 +1021,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_setti
 fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr_settings(
     system_parameter: &MtrrLibSystemParameter,
 ) {
-    let mut status: ReturnStatus;
+    let mut status;
     let mut uc_count: u32 = 0;
     let mut wt_count: u32 = 0;
     let mut wb_count: u32 = 0;
@@ -1124,7 +1123,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr
         );
         // println!("After: \n{}", mtrr_setting);
 
-        if return_error(status) {
+        if status.is_err() {
             return;
         }
     }
@@ -1161,7 +1160,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr
         &mut returned_memory_ranges[..],
         Some(&mut returned_memory_ranges_count),
     );
-    assert_eq!(status, RETURN_SUCCESS);
+    assert!(status.is_ok());
     println!("--- Returned Memory Ranges [{}] ---", returned_memory_ranges_count);
     dump_memory_ranges(&returned_memory_ranges, returned_memory_ranges_count);
     verify_memory_ranges(
