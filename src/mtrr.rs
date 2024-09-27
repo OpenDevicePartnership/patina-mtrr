@@ -75,11 +75,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @retval FALSE MTRR is not supported when both fixed MTRR is not supported and max
     //                number of variable MTRRs is 0.
     //
-    fn mtrr_lib_is_mtrr_supported(
-        &self,
-        fixed_mtrr_supported: Option<&mut bool>,
-        variable_mtrr_ranges_count: Option<&mut u32>,
-    ) -> bool {
+    fn mtrr_lib_is_mtrr_supported(&self) -> MtrrResult<(bool, u32)> {
         let edx: u32;
 
         // Check CPUID(1).EDX[12] for MTRR capability
@@ -88,14 +84,7 @@ impl<H: HalTrait> MtrrLib<H> {
         let mtrr_supported = (edx & (1 << 12)) != 0;
 
         if !mtrr_supported {
-            if let Some(fixed_mtrr_supported) = fixed_mtrr_supported {
-                *fixed_mtrr_supported = false;
-            }
-
-            if let Some(variable_mtrr_ranges_count) = variable_mtrr_ranges_count {
-                *variable_mtrr_ranges_count = 0;
-            }
-            return false;
+            return Err(MtrrError::MtrrNotSupported);
         }
 
         // Check the number of variable MTRRs and determine whether fixed MTRRs exist.
@@ -105,19 +94,12 @@ impl<H: HalTrait> MtrrLib<H> {
         let fix = ((mtrr_cap >> 8) & 0x1) == 1; // FIX is in bit 8
 
         assert!(vcnt <= MTRR_NUMBER_OF_VARIABLE_MTRR as u32);
-        if let Some(fixed_mtrr_supported) = fixed_mtrr_supported {
-            *fixed_mtrr_supported = fix;
-        }
-
-        if let Some(variable_mtrr_ranges_count) = variable_mtrr_ranges_count {
-            *variable_mtrr_ranges_count = vcnt;
-        }
 
         if vcnt == 0 && !fix {
-            return false;
+            return Err(MtrrError::MtrrNotSupported);
         }
 
-        true
+        Ok((fix, vcnt))
     }
 
     //
@@ -2156,7 +2138,6 @@ impl<H: HalTrait> MtrrLib<H> {
         let mut working_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_WORKING_MTRR_RANGES] =
             [MtrrMemoryRange::default(); MTRR_NUMBER_OF_WORKING_MTRR_RANGES];
         let mut working_range_count;
-        let mut original_variable_mtrr_ranges_count;
         let firmware_variable_mtrr_count: u32;
         let mut working_variable_mtrr_ranges_count: usize = 0;
         let mut original_variable_mtrr_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_VARIABLE_MTRR] = Default::default();
@@ -2164,7 +2145,6 @@ impl<H: HalTrait> MtrrLib<H> {
         let mut variable_setting_modified: [bool; MTRR_NUMBER_OF_VARIABLE_MTRR] = [false; MTRR_NUMBER_OF_VARIABLE_MTRR];
 
         let fixed_mtrr_memory_limit: u64;
-        let mut fixed_mtrr_supported: bool = false;
         let mut clear_masks: [u64; 11] = [0; 11];
         let mut or_masks: [u64; 11] = [0; 11];
 
@@ -2176,7 +2156,6 @@ impl<H: HalTrait> MtrrLib<H> {
 
         // Set memory attributes
         variable_mtrr_needed = false;
-        original_variable_mtrr_ranges_count = 0;
 
         // Dump the requests for debugging
         // TODO: VINEEL Enable dumping
@@ -2196,11 +2175,9 @@ impl<H: HalTrait> MtrrLib<H> {
         }
 
         // 1. Validate the parameters
-        if !self
-            .mtrr_lib_is_mtrr_supported(Some(&mut fixed_mtrr_supported), Some(&mut original_variable_mtrr_ranges_count))
-        {
+        let Ok((fixed_mtrr_supported, original_variable_mtrr_ranges_count)) = self.mtrr_lib_is_mtrr_supported() else {
             return Err(MtrrError::ReturnUnsupported);
-        }
+        };
 
         fixed_mtrr_memory_limit = if fixed_mtrr_supported { SIZE_1MB as u64 } else { 0 };
 
@@ -2621,17 +2598,14 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @retval the pointer of MtrrSetting
     //
-    pub fn mtrr_get_all_mtrrs(&self) -> MtrrSettings{
-        let mut fixed_mtrr_supported = false;
-        let mut variable_mtrr_ranges_count = 0;
-
+    pub fn mtrr_get_all_mtrrs(&self) -> MtrrSettings {
         // Initialize the MTRR settings
         let mut mtrr_setting = MtrrSettings::default();
 
         // Check if MTRR is supported
-        if !self.mtrr_lib_is_mtrr_supported(Some(&mut fixed_mtrr_supported), Some(&mut variable_mtrr_ranges_count)) {
+        let Ok((fixed_mtrr_supported, variable_mtrr_ranges_count)) = self.mtrr_lib_is_mtrr_supported() else {
             return mtrr_setting;
-        }
+        };
 
         // Get MTRR_DEF_TYPE value
         let mtrr_def_type = MsrIa32MtrrDefType::from_bits(self.hal.asm_read_msr64(MSR_IA32_MTRR_DEF_TYPE));
@@ -2662,15 +2636,12 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @retval The pointer of MtrrSetting
     //
     pub fn mtrr_set_all_mtrrs(&mut self, mtrr_setting: &MtrrSettings) {
-        let mut fixed_mtrr_supported = false;
         let mut mtrr_context = MtrrContext::default();
 
-        let mut variable_mtrr_ranges_count = 0;
-
         // Check if MTRR is supported
-        if !self.mtrr_lib_is_mtrr_supported(Some(&mut fixed_mtrr_supported), Some(&mut variable_mtrr_ranges_count)) {
+        let Ok((fixed_mtrr_supported, _)) = self.mtrr_lib_is_mtrr_supported() else {
             return;
-        }
+        };
 
         // Prepare for MTRR change
         self.mtrr_lib_pre_mtrr_change(&mut mtrr_context);
@@ -2700,11 +2671,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @retval FALSE MTRR is not supported.
     //
     pub fn is_mtrr_supported(&self) -> bool {
-        // Assuming the existence of the MtrrLibIsMtrrSupported function
-        let mut fixed_mtrr_supported = false;
-        let mut variable_mtrr_ranges_count = 0;
-
-        self.mtrr_lib_is_mtrr_supported(Some(&mut fixed_mtrr_supported), Some(&mut variable_mtrr_ranges_count))
+        self.mtrr_lib_is_mtrr_supported().is_ok()
     }
 
     //

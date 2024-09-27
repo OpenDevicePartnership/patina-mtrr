@@ -3,7 +3,7 @@ pub type MtrrResult<T> = Result<T, MtrrError>;
 #[derive(Debug, PartialEq)]
 pub enum MtrrError {
     // // MTRR Disabled
-    // MtrrDisabled,
+    MtrrNotSupported,
 
     // // Unaligned Address
     // UnalignedAddress,
