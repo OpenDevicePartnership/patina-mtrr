@@ -478,7 +478,6 @@ fn unit_test_mtrr_get_fixed_mtrr() {
     for _ in 0..100 {
         let mut hal = MockHal::new();
         hal.initialize_mtrr_regs(&system_parameter);
-        let mut fixed_settings = MtrrFixedSettings::default();
         for msr_index in 0..MTRR_NUMBER_OF_FIXED_MTRR {
             let mut msr_value = 0;
             for byte in 0..8 {
@@ -490,30 +489,28 @@ fn unit_test_mtrr_get_fixed_mtrr() {
             hal.asm_write_msr64(M_FIXED_MTRRS_INDEX[msr_index], msr_value);
         }
         let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
-        let res = mtrrlib.mtrr_get_fixed_mtrr(&mut fixed_settings);
-        assert!(res.mtrr == expected_mtrr_fixed_settings.mtrr)
+        let fixed_settings = mtrrlib.mtrr_get_fixed_mtrr();
+        assert!(fixed_settings.mtrr == expected_mtrr_fixed_settings.mtrr)
     }
 
     // Negative test case when MTRRs are not supported
     system_parameter.mtrr_supported = false;
     let expected_mtrr_fixed_settings = MtrrFixedSettings::default();
-    let mut fixed_settings = MtrrFixedSettings::default();
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
-    let res = mtrrlib.mtrr_get_fixed_mtrr(&mut fixed_settings);
-    assert!(res.mtrr == expected_mtrr_fixed_settings.mtrr);
+    let fixed_settings = mtrrlib.mtrr_get_fixed_mtrr();
+    assert!(fixed_settings.mtrr == expected_mtrr_fixed_settings.mtrr);
 
     // Negative test case when Fixed MTRRs are not supported
     system_parameter.mtrr_supported = true;
     system_parameter.fixed_mtrr_supported = false;
     let expected_mtrr_fixed_settings = MtrrFixedSettings::default();
-    let mut fixed_settings = MtrrFixedSettings::default();
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
-    let res = mtrrlib.mtrr_get_fixed_mtrr(&mut fixed_settings);
-    assert!(res.mtrr == expected_mtrr_fixed_settings.mtrr);
+    let fixed_settings = mtrrlib.mtrr_get_fixed_mtrr();
+    assert!(fixed_settings.mtrr == expected_mtrr_fixed_settings.mtrr);
 }
 
 #[test]

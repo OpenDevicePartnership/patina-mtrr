@@ -249,13 +249,19 @@ impl<H: HalTrait> MtrrLib<H> {
     }
 
     //
-    //  Worker function gets the content in fixed MTRRs
+    //  This function gets the content in fixed MTRRs
     //
     //  @param[out]  FixedSettings  A buffer to hold fixed MTRRs content.
     //
     //  @retval The pointer of FixedSettings
     //
-    fn mtrr_get_fixed_mtrr_worker<'a>(&self, fixed_settings: &'a mut MtrrFixedSettings) -> &'a mut MtrrFixedSettings {
+    pub fn mtrr_get_fixed_mtrr(&self) -> MtrrFixedSettings {
+        let mut fixed_settings = MtrrFixedSettings::default();
+
+        if !self.is_mtrr_supported() {
+            return fixed_settings;
+        }
+
         for (index, entry) in MMTRR_LIB_FIXED_MTRR_TABLE.iter().enumerate() {
             if index < MTRR_NUMBER_OF_FIXED_MTRR {
                 fixed_settings.mtrr[index] = self.hal.asm_read_msr64(entry.msr);
@@ -263,21 +269,6 @@ impl<H: HalTrait> MtrrLib<H> {
         }
 
         fixed_settings
-    }
-
-    //
-    //  This function gets the content in fixed MTRRs
-    //
-    //  @param[out]  FixedSettings  A buffer to hold fixed MTRRs content.
-    //
-    //  @retval The pointer of FixedSettings
-    //
-    pub fn mtrr_get_fixed_mtrr<'a>(&self, fixed_settings: &'a mut MtrrFixedSettings) -> &'a mut MtrrFixedSettings {
-        if !self.is_mtrr_supported() {
-            return fixed_settings;
-        }
-
-        self.mtrr_get_fixed_mtrr_worker(fixed_settings)
     }
 
     //
@@ -2617,7 +2608,7 @@ impl<H: HalTrait> MtrrLib<H> {
 
         // Get fixed MTRRs if supported
         if mtrr_def_type.fe() {
-            self.mtrr_get_fixed_mtrr_worker(&mut mtrr_setting.fixed);
+            mtrr_setting.fixed = self.mtrr_get_fixed_mtrr();
         }
 
         // Get variable MTRRs
