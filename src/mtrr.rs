@@ -284,14 +284,14 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @return The VariableMtrrSettings input pointer
     //
-    fn mtrr_get_variable_mtrr_worker<'a>(
+    fn mtrr_get_variable_mtrr(
         &self,
         mtrr_setting: Option<&MtrrSettings>,
         variable_mtrr_ranges_count: u32,
-        variable_mtrr_settings: &'a mut MtrrVariableSettings,
-    ) -> &'a mut MtrrVariableSettings {
+    ) -> MtrrVariableSettings {
         assert!(variable_mtrr_ranges_count <= MTRR_NUMBER_OF_VARIABLE_MTRR as u32);
 
+        let mut variable_mtrr_settings = MtrrVariableSettings::default();
         for index in 0..variable_mtrr_ranges_count as usize {
             if let Some(settings) = mtrr_setting {
                 variable_mtrr_settings.mtrr[index].base = settings.variables.mtrr[index].base;
@@ -501,12 +501,10 @@ impl<H: HalTrait> MtrrLib<H> {
             return 0;
         }
 
-        // Initialize the variable MTRR settings
-        let mut variable_mtrr_settings = MtrrVariableSettings::default();
-
         let ranges_count = self.get_variable_mtrr_count();
+
         // Get the variable MTRR settings
-        self.mtrr_get_variable_mtrr_worker(None, ranges_count, &mut variable_mtrr_settings);
+        let variable_mtrr_settings = self.mtrr_get_variable_mtrr(None, ranges_count);
 
         let firmware_mtrr_count = self.get_firmware_variable_mtrr_count();
 
@@ -689,8 +687,7 @@ impl<H: HalTrait> MtrrLib<H> {
         let variable_mtrr_ranges_count = self.get_variable_mtrr_count();
         assert!(variable_mtrr_ranges_count <= MTRR_NUMBER_OF_VARIABLE_MTRR as u32);
 
-        let mut variable_mtrr_settings = Default::default();
-        self.mtrr_get_variable_mtrr_worker(mtrr_settings, variable_mtrr_ranges_count, &mut variable_mtrr_settings);
+        let variable_mtrr_settings = self.mtrr_get_variable_mtrr(mtrr_settings, variable_mtrr_ranges_count);
         let mut mtrr_valid_bits_mask = 0;
         let mut mtrr_valid_address_mask = 0;
         self.mtrr_lib_initialize_mtrr_mask(&mut mtrr_valid_bits_mask, &mut mtrr_valid_address_mask);
@@ -2125,7 +2122,6 @@ impl<H: HalTrait> MtrrLib<H> {
         let mut mtrr_valid_bits_mask: u64 = 0;
         let mut mtrr_valid_address_mask: u64 = 0;
         let default_type: MtrrMemoryCacheType;
-        let mut variable_mtrr_settings = MtrrVariableSettings::default();
         let mut working_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_WORKING_MTRR_RANGES] =
             [MtrrMemoryRange::default(); MTRR_NUMBER_OF_WORKING_MTRR_RANGES];
         let mut working_range_count;
@@ -2203,10 +2199,9 @@ impl<H: HalTrait> MtrrLib<H> {
         // 2. Apply the above-1MB memory attribute settings
         if variable_mtrr_needed {
             // 2.1. Read all variable MTRRs and convert to Ranges.
-            self.mtrr_get_variable_mtrr_worker(
+            let variable_mtrr_settings = self.mtrr_get_variable_mtrr(
                 mtrr_setting.as_deref(),
                 original_variable_mtrr_ranges_count,
-                &mut variable_mtrr_settings,
             );
             Self::mtrr_lib_get_raw_variable_ranges(
                 &variable_mtrr_settings,
@@ -2612,7 +2607,7 @@ impl<H: HalTrait> MtrrLib<H> {
         }
 
         // Get variable MTRRs
-        self.mtrr_get_variable_mtrr_worker(None, variable_mtrr_ranges_count, &mut mtrr_setting.variables);
+        mtrr_setting.variables = self.mtrr_get_variable_mtrr(None, variable_mtrr_ranges_count);
         mtrr_setting
     }
 
