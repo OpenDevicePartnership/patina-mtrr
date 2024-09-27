@@ -2514,7 +2514,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @param[in]  VariableMtrrSettings   A buffer to hold variable MTRRs content.
     //
-    fn mtrr_set_variable_mtrr_worker(&mut self, variable_mtrr_settings: &MtrrVariableSettings) {
+    fn mtrr_set_variable_mtrr(&mut self, variable_mtrr_settings: &MtrrVariableSettings) {
         let variable_mtrr_ranges_count = self.get_variable_mtrr_count();
         assert!(variable_mtrr_ranges_count <= MTRR_NUMBER_OF_VARIABLE_MTRR as u32);
 
@@ -2532,7 +2532,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @param[in]  FixedSettings  A buffer to hold fixed MTRRs content.
     //
-    fn mtrr_set_fixed_mtrr_worker(&mut self, fixed_settings: &MtrrFixedSettings) {
+    fn mtrr_set_fixed_mtrr(&mut self, fixed_settings: &MtrrFixedSettings) {
         for index in 0..MTRR_NUMBER_OF_FIXED_MTRR {
             let msr = MMTRR_LIB_FIXED_MTRR_TABLE[index].msr;
             let value = fixed_settings.mtrr[index];
@@ -2600,11 +2600,11 @@ impl<H: HalTrait> MtrrLib<H> {
 
         // If hardware supports Fixed MTRR, set Fixed MTRRs
         if fixed_mtrr_supported {
-            self.mtrr_set_fixed_mtrr_worker(&mtrr_setting.fixed);
+            self.mtrr_set_fixed_mtrr(&mtrr_setting.fixed);
         }
 
         // Set Variable MTRRs
-        self.mtrr_set_variable_mtrr_worker(&mtrr_setting.variables);
+        self.mtrr_set_variable_mtrr(&mtrr_setting.variables);
 
         // Set MTRR_DEF_TYPE value
         self.hal.asm_write_msr64(MSR_IA32_MTRR_DEF_TYPE, mtrr_setting.mtrr_def_type_reg.into_bits());

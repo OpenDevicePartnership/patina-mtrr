@@ -2,7 +2,7 @@ use crate::{
     hal::HalTrait,
     structs::{
         MsrIa32MtrrDefType, MsrIa32MtrrPhysbaseRegister, MsrIa32MtrrPhysmaskRegister, MtrrFixedSettings,
-        MtrrMemoryCacheType, MtrrMemoryRange, MtrrSettings, MtrrVariableSetting, MtrrVariableSettings, VariableMtrr,
+        MtrrMemoryCacheType, MtrrMemoryRange, MtrrSettings, MtrrVariableSetting, MtrrVariableSettings,
         MSR_IA32_MTRR_DEF_TYPE, MSR_IA32_MTRR_PHYSBASE0, MSR_IA32_MTRR_PHYSMASK0, MTRR_NUMBER_OF_FIXED_MTRR,
         MTRR_NUMBER_OF_VARIABLE_MTRR, SCRATCH_BUFFER_SIZE,
     },
@@ -655,10 +655,8 @@ fn unit_test_mtrr_get_memory_attribute_in_variable_mtrr() {
     // println!("valid_mtrr_address_mask: {:x}", valid_mtrr_address_mask);
 
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
-    let variable_mtrr = mtrrlib.mtrr_get_memory_attribute_in_variable_mtrr(
-        valid_mtrr_bits_mask,
-        valid_mtrr_address_mask,
-    );
+    let variable_mtrr =
+        mtrrlib.mtrr_get_memory_attribute_in_variable_mtrr(valid_mtrr_bits_mask, valid_mtrr_address_mask);
 
     for index in 0..system_parameter.variable_mtrr_count as usize {
         let base = MsrIa32MtrrPhysbaseRegister::default()
@@ -681,10 +679,8 @@ fn unit_test_mtrr_get_memory_attribute_in_variable_mtrr() {
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
-    let variable_mtrr = mtrrlib.mtrr_get_memory_attribute_in_variable_mtrr(
-        valid_mtrr_bits_mask,
-        valid_mtrr_address_mask,
-    );
+    let variable_mtrr =
+        mtrrlib.mtrr_get_memory_attribute_in_variable_mtrr(valid_mtrr_bits_mask, valid_mtrr_address_mask);
     assert!(variable_mtrr.len() <= MTRR_NUMBER_OF_VARIABLE_MTRR);
     assert!(variable_mtrr.len() <= mtrrlib.get_firmware_variable_mtrr_count() as usize);
 
