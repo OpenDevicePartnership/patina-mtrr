@@ -454,7 +454,10 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @param[out]  MtrrValidBitsMask     The mask for the valid bit of the MTRR
     //  @param[out]  MtrrValidAddressMask  The valid address mask for the MTRR
     //
-    fn mtrr_lib_initialize_mtrr_mask(&self, mtrr_valid_bits_mask: &mut u64, mtrr_valid_address_mask: &mut u64) {
+    fn mtrr_lib_initialize_mtrr_mask(&self) -> (u64, u64) {
+        let mtrr_valid_bits_mask;
+        let mtrr_valid_address_mask;
+
         let mut vir_phy_address_size = CpuidVirPhyAddressSizeEax::default();
 
         // Get maximum CPUID function number
@@ -490,8 +493,10 @@ impl<H: HalTrait> MtrrLib<H> {
             }
         }
 
-        *mtrr_valid_bits_mask = (1u64 << vir_phy_address_size.physical_address_bits()) - 1;
-        *mtrr_valid_address_mask = *mtrr_valid_bits_mask & 0xfffffffffffff000u64;
+        mtrr_valid_bits_mask = (1u64 << vir_phy_address_size.physical_address_bits()) - 1;
+        mtrr_valid_address_mask = mtrr_valid_bits_mask & 0xfffffffffffff000u64;
+
+        (mtrr_valid_bits_mask, mtrr_valid_address_mask)
     }
 
     //
@@ -579,9 +584,7 @@ impl<H: HalTrait> MtrrLib<H> {
         assert!(variable_mtrr_ranges_count <= MTRR_NUMBER_OF_VARIABLE_MTRR as u32);
 
         let variable_mtrr_settings = self.mtrr_get_variable_mtrr(mtrr_settings, variable_mtrr_ranges_count);
-        let mut mtrr_valid_bits_mask = 0;
-        let mut mtrr_valid_address_mask = 0;
-        self.mtrr_lib_initialize_mtrr_mask(&mut mtrr_valid_bits_mask, &mut mtrr_valid_address_mask);
+        let (mtrr_valid_bits_mask, mtrr_valid_address_mask) = self.mtrr_lib_initialize_mtrr_mask();
         let mut variable_mtrr_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_VARIABLE_MTRR] = Default::default();
         let _ = Self::mtrr_lib_get_raw_variable_ranges(
             &variable_mtrr_settings,
@@ -2010,8 +2013,6 @@ impl<H: HalTrait> MtrrLib<H> {
         let mut base_address: u64;
         let mut length: u64;
 
-        let mut mtrr_valid_bits_mask: u64 = 0;
-        let mut mtrr_valid_address_mask: u64 = 0;
         let default_type: MtrrMemoryCacheType;
         let mut working_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_WORKING_MTRR_RANGES] =
             [MtrrMemoryRange::default(); MTRR_NUMBER_OF_WORKING_MTRR_RANGES];
@@ -2030,7 +2031,7 @@ impl<H: HalTrait> MtrrLib<H> {
         let mut mtrr_context_valid = false;
 
         // Initialize MTRR Mask
-        self.mtrr_lib_initialize_mtrr_mask(&mut mtrr_valid_bits_mask, &mut mtrr_valid_address_mask);
+        let (mtrr_valid_bits_mask, mtrr_valid_address_mask) = self.mtrr_lib_initialize_mtrr_mask();
 
         // Set memory attributes
         variable_mtrr_needed = false;
@@ -2573,7 +2574,6 @@ impl<H: HalTrait> MtrrLib<H> {
             [MtrrMemoryRange::default(); MTRR_NUMBER_OF_LOCAL_MTRR_RANGES];
 
         let mut working_range_count = 1;
-        let (mut mtrr_valid_bits_mask, mut mtrr_valid_address_mask) = (0, 0);
 
         // Validate parameters
         if range_count.is_none() {
@@ -2596,7 +2596,7 @@ impl<H: HalTrait> MtrrLib<H> {
         };
 
         // Initialize the MTRR masks
-        self.mtrr_lib_initialize_mtrr_mask(&mut mtrr_valid_bits_mask, &mut mtrr_valid_address_mask);
+        let (mtrr_valid_bits_mask, mtrr_valid_address_mask) = self.mtrr_lib_initialize_mtrr_mask();
 
         // Start with the one big range[0, mtrr_valid_bits_mask] and the default memory type
         working_ranges[0] = MtrrMemoryRange { base_address: 0, length: mtrr_valid_bits_mask + 1, ..Default::default() };
