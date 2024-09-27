@@ -17,7 +17,6 @@ use crate::structs::MtrrMemoryRange;
 use crate::structs::MtrrSettings;
 use crate::structs::MtrrVariableSetting;
 use crate::structs::MtrrVariableSettings;
-use crate::structs::VariableMtrr;
 use crate::structs::BIT11;
 use crate::structs::BIT7;
 use crate::structs::CLEAR_SEED;
@@ -47,6 +46,9 @@ use crate::utils::lshift_u64;
 use crate::utils::mult_u64x32;
 use crate::utils::rshift_u64;
 
+#[cfg(test)]
+use crate::structs::VariableMtrr;
+
 fn m(start: u16, index: u16, vertex_count: u16) -> usize {
     (start as usize) * vertex_count as usize + (index as usize)
 }
@@ -60,7 +62,7 @@ pub struct MtrrLib<H: HalTrait> {
 }
 
 impl<H: HalTrait> MtrrLib<H> {
-    fn new(hal: H) -> Self {
+    pub(crate) fn new(hal: H) -> Self {
         Self { hal }
     }
 
@@ -107,7 +109,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @return Variable MTRR count
     //
-    pub fn get_variable_mtrr_count(&self) -> u32 {
+    pub(crate) fn get_variable_mtrr_count(&self) -> u32 {
         if !self.is_mtrr_supported() {
             return 0;
         }
@@ -122,27 +124,6 @@ impl<H: HalTrait> MtrrLib<H> {
         assert!(vcnt <= MTRR_NUMBER_OF_VARIABLE_MTRR as u32);
 
         vcnt
-    }
-
-    //
-    //  Returns the firmware usable variable MTRR count for the CPU.
-    //
-    //  @return Firmware usable variable MTRR count
-    //
-    pub fn get_firmware_usable_variable_mtrr_count(&self) -> u32 {
-        if !self.is_mtrr_supported() {
-            return 0;
-        }
-
-        // Assuming the existence of these functions
-        let variable_mtrr_ranges_count = self.get_variable_mtrr_count();
-        let reserved_mtrr_number = self.hal.get_pcd_cpu_number_of_reserved_variable_mtrrs();
-
-        if variable_mtrr_ranges_count < reserved_mtrr_number {
-            return 0;
-        }
-
-        variable_mtrr_ranges_count - reserved_mtrr_number
     }
 
     //
@@ -255,7 +236,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @retval The pointer of FixedSettings
     //
-    pub fn mtrr_get_fixed_mtrr(&self) -> MtrrFixedSettings {
+    pub(crate) fn mtrr_get_fixed_mtrr(&self) -> MtrrFixedSettings {
         let mut fixed_settings = MtrrFixedSettings::default();
 
         if !self.is_mtrr_supported() {
@@ -426,61 +407,6 @@ impl<H: HalTrait> MtrrLib<H> {
         }
 
         used_mtrr
-    }
-
-    //
-    //  Gets the attribute of variable MTRRs.
-    //
-    //  This function shadows the content of variable MTRRs into an
-    //  internal array: VariableMtrrRanges.
-    //
-    //  @param[in]   MtrrValidBitsMask     The mask for the valid bit of the MTRR
-    //  @param[in]   MtrrValidAddressMask  The valid address mask for MTRR
-    //  @param[out]  VariableMtrrRanges          The array to shadow variable MTRRs content
-    //
-    //  @return                       The return value of this parameter indicates the
-    //                                number of MTRRs which has been used.
-    //
-    pub fn mtrr_get_memory_attribute_in_variable_mtrr(
-        &self,
-        mtrr_valid_bits_mask: u64,
-        mtrr_valid_address_mask: u64,
-    ) -> Vec<VariableMtrr> {
-        let mut variable_mtrr_ranges: Vec<VariableMtrr> = Vec::new();
-
-        // Check if MTRR is supported
-        if !self.is_mtrr_supported() {
-            return variable_mtrr_ranges;
-        }
-
-        let ranges_count = self.get_variable_mtrr_count();
-
-        // Get the variable MTRR settings
-        let variable_mtrr_settings = self.mtrr_get_variable_mtrr(None, ranges_count);
-
-        let firmware_variable_mtrr_count = self.get_firmware_usable_variable_mtrr_count();
-
-        for index in 0..firmware_variable_mtrr_count as usize {
-            let entry = &variable_mtrr_settings.mtrr[index];
-            let mask = entry.mask;
-            let base = entry.base;
-
-            // Check if the MTRR is valid
-            if (mask >> 11) & 1 != 0 {
-                variable_mtrr_ranges.push(VariableMtrr{
-                    msr: index as u32,
-                    base_address: base & mtrr_valid_address_mask,
-                    length: ((!(mask & mtrr_valid_address_mask)) & mtrr_valid_bits_mask) + 1,
-                    mem_type: (base & 0xff) as u8,
-                    valid: true,
-                    used: true,
-                });
-            } else {
-                variable_mtrr_ranges.push(VariableMtrr::default());
-            }
-        }
-
-        variable_mtrr_ranges
     }
 
     //
@@ -2812,9 +2738,94 @@ impl<H: HalTrait> MtrrLib<H> {
         self.mtrr_debug_print_all_mtrrs_worker(None);
     }
 
+    //
+    //  Few tests require reusing the hal passed to MtrrLib for validation
+    //  purposes towards the end of the tests. So this function basically
+    //  consumes the MtrrLib and returns the hal.
+    //
+    //  @return Firmware usable variable MTRR count
+    //
     #[cfg(test)]
-    pub fn mtrr_drop_hal(self) -> H {
+    pub(crate) fn mtrr_drop_hal(self) -> H {
         self.hal
+    }
+
+    //
+    //  Returns the firmware usable variable MTRR count for the CPU.
+    //
+    //  @return Firmware usable variable MTRR count
+    //
+    #[cfg(test)]
+    pub(crate) fn get_firmware_usable_variable_mtrr_count(&self) -> u32 {
+        if !self.is_mtrr_supported() {
+            return 0;
+        }
+
+        // Assuming the existence of these functions
+        let variable_mtrr_ranges_count = self.get_variable_mtrr_count();
+        let reserved_mtrr_number = self.hal.get_pcd_cpu_number_of_reserved_variable_mtrrs();
+
+        if variable_mtrr_ranges_count < reserved_mtrr_number {
+            return 0;
+        }
+
+        variable_mtrr_ranges_count - reserved_mtrr_number
+    }
+
+    //
+    //  Gets the attribute of variable MTRRs.
+    //
+    //  This function shadows the content of variable MTRRs into an
+    //  internal array: VariableMtrrRanges.
+    //
+    //  @param[in]   MtrrValidBitsMask     The mask for the valid bit of the MTRR
+    //  @param[in]   MtrrValidAddressMask  The valid address mask for MTRR
+    //  @param[out]  VariableMtrrRanges          The array to shadow variable MTRRs content
+    //
+    //  @return                       The return value of this parameter indicates the
+    //                                number of MTRRs which has been used.
+    //
+    #[cfg(test)]
+    pub(crate) fn mtrr_get_memory_attribute_in_variable_mtrr(
+        &self,
+        mtrr_valid_bits_mask: u64,
+        mtrr_valid_address_mask: u64,
+    ) -> Vec<VariableMtrr> {
+        let mut variable_mtrr_ranges: Vec<VariableMtrr> = Vec::new();
+
+        // Check if MTRR is supported
+        if !self.is_mtrr_supported() {
+            return variable_mtrr_ranges;
+        }
+
+        let ranges_count = self.get_variable_mtrr_count();
+
+        // Get the variable MTRR settings
+        let variable_mtrr_settings = self.mtrr_get_variable_mtrr(None, ranges_count);
+
+        let firmware_variable_mtrr_count = self.get_firmware_usable_variable_mtrr_count();
+
+        for index in 0..firmware_variable_mtrr_count as usize {
+            let entry = &variable_mtrr_settings.mtrr[index];
+            let mask = entry.mask;
+            let base = entry.base;
+
+            // Check if the MTRR is valid
+            if (mask >> 11) & 1 != 0 {
+                variable_mtrr_ranges.push(VariableMtrr {
+                    msr: index as u32,
+                    base_address: base & mtrr_valid_address_mask,
+                    length: ((!(mask & mtrr_valid_address_mask)) & mtrr_valid_bits_mask) + 1,
+                    mem_type: (base & 0xff) as u8,
+                    valid: true,
+                    used: true,
+                });
+            } else {
+                variable_mtrr_ranges.push(VariableMtrr::default());
+            }
+        }
+
+        variable_mtrr_ranges
     }
 }
 
