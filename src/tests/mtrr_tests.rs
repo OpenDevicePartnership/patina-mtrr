@@ -529,9 +529,8 @@ fn unit_test_mtrr_get_all_mtrrs() {
     let mut expected_mtrr_settings = MtrrSettings::default();
     expected_mtrr_settings.mtrr_def_type_reg = MsrIa32MtrrDefType::default().with_e(true).with_fe(false);
     set_randomly_generated_mtrr_settings(&mut hal, &system_parameter, &mut expected_mtrr_settings);
-    let mut mtrr_settings = MtrrSettings::default();
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
-    mtrrlib.mtrr_get_all_mtrrs(&mut mtrr_settings);
+    let mtrr_settings = mtrrlib.mtrr_get_all_mtrrs();
     assert!(mtrr_settings.fixed == expected_mtrr_settings.fixed);
     assert!(mtrr_settings.variables == expected_mtrr_settings.variables);
 
@@ -543,9 +542,8 @@ fn unit_test_mtrr_get_all_mtrrs() {
     let mut expected_mtrr_settings = MtrrSettings::default();
     expected_mtrr_settings.mtrr_def_type_reg = MsrIa32MtrrDefType::default().with_e(true).with_fe(true);
     set_randomly_generated_mtrr_settings(&mut hal, &system_parameter, &mut expected_mtrr_settings);
-    let mut mtrr_settings = MtrrSettings::default();
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
-    mtrrlib.mtrr_get_all_mtrrs(&mut mtrr_settings);
+    let mtrr_settings = mtrrlib.mtrr_get_all_mtrrs();
     assert!(mtrr_settings.fixed == expected_mtrr_settings.fixed);
     assert!(mtrr_settings.variables == expected_mtrr_settings.variables);
 
@@ -557,9 +555,8 @@ fn unit_test_mtrr_get_all_mtrrs() {
     let mut expected_mtrr_settings = MtrrSettings::default();
     expected_mtrr_settings.mtrr_def_type_reg = MsrIa32MtrrDefType::default().with_e(true).with_fe(true);
     // set_randomly_generated_mtrr_settings(&mut hal, &system_parameter, &mut expected_mtrr_settings);
-    let mut mtrr_settings = MtrrSettings::default();
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
-    mtrrlib.mtrr_get_all_mtrrs(&mut mtrr_settings);
+    let mtrr_settings = mtrrlib.mtrr_get_all_mtrrs();
     assert!(mtrr_settings.fixed == expected_mtrr_settings.fixed);
     assert!(mtrr_settings.variables == expected_mtrr_settings.variables);
 
@@ -567,11 +564,10 @@ fn unit_test_mtrr_get_all_mtrrs() {
     system_parameter.mtrr_supported = true;
     system_parameter.variable_mtrr_count = MTRR_NUMBER_OF_VARIABLE_MTRR as u32 + 1;
     let _ = panic::catch_unwind(|| {
-        let mut mtrr_settings = MtrrSettings::default();
         let mut hal = MockHal::new();
         hal.initialize_mtrr_regs(&system_parameter);
         let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
-        mtrrlib.mtrr_get_all_mtrrs(&mut mtrr_settings);
+        let _ = mtrrlib.mtrr_get_all_mtrrs();
     });
 }
 
@@ -1128,8 +1124,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr
         }
     }
 
-    let mut mtrr_setting = MtrrSettings::default();
-    mtrrlib.mtrr_get_all_mtrrs(&mut mtrr_setting);
+    let mtrr_setting = mtrrlib.mtrr_get_all_mtrrs();
 
     actual_memory_ranges_count = actual_memory_ranges.len();
     collect_test_result(

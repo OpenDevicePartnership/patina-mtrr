@@ -2621,16 +2621,16 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @retval the pointer of MtrrSetting
     //
-    pub fn mtrr_get_all_mtrrs(&self, mtrr_setting: &mut MtrrSettings) {
+    pub fn mtrr_get_all_mtrrs(&self) -> MtrrSettings{
         let mut fixed_mtrr_supported = false;
         let mut variable_mtrr_ranges_count = 0;
 
         // Initialize the MTRR settings
-        *mtrr_setting = MtrrSettings::default();
+        let mut mtrr_setting = MtrrSettings::default();
 
         // Check if MTRR is supported
         if !self.mtrr_lib_is_mtrr_supported(Some(&mut fixed_mtrr_supported), Some(&mut variable_mtrr_ranges_count)) {
-            return;
+            return mtrr_setting;
         }
 
         // Get MTRR_DEF_TYPE value
@@ -2648,6 +2648,7 @@ impl<H: HalTrait> MtrrLib<H> {
 
         // Get variable MTRRs
         self.mtrr_get_variable_mtrr_worker(None, variable_mtrr_ranges_count, &mut mtrr_setting.variables);
+        mtrr_setting
     }
 
     //
@@ -2728,7 +2729,7 @@ impl<H: HalTrait> MtrrLib<H> {
         range_count: Option<&mut usize>,
     ) -> MtrrResult<()> {
         // Define the local structures and variables
-        let mut local_mtrrs = MtrrSettings::default();
+        let local_mtrrs;
         let mtrrs: &MtrrSettings;
         let mut raw_variable_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_VARIABLE_MTRR] = Default::default();
         let mut working_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_LOCAL_MTRR_RANGES] =
@@ -2752,7 +2753,7 @@ impl<H: HalTrait> MtrrLib<H> {
         mtrrs = match mtrr_setting {
             Some(settings) => settings,
             None => {
-                self.mtrr_get_all_mtrrs(&mut local_mtrrs);
+                local_mtrrs = self.mtrr_get_all_mtrrs();
                 &local_mtrrs
             }
         };
@@ -2826,7 +2827,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     fn mtrr_debug_print_all_mtrrs_worker(&self, mtrr_setting: Option<&MtrrSettings>) {
         // Initialize local variables
-        let mut local_mtrrs = MtrrSettings::default();
+        let local_mtrrs;
         let mtrrs: &MtrrSettings;
         let status;
         let mut range_count: usize;
@@ -2840,7 +2841,7 @@ impl<H: HalTrait> MtrrLib<H> {
         mtrrs = match mtrr_setting {
             Some(settings) => settings,
             None => {
-                self.mtrr_get_all_mtrrs(&mut local_mtrrs);
+                local_mtrrs = self.mtrr_get_all_mtrrs();
                 &local_mtrrs
             }
         };
