@@ -60,7 +60,7 @@ pub struct MtrrLib<H: HalTrait> {
 }
 
 impl<H: HalTrait> MtrrLib<H> {
-    pub fn new(hal: H) -> Self {
+    fn new(hal: H) -> Self {
         Self { hal }
     }
 
@@ -129,14 +129,14 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  @return Firmware usable variable MTRR count
     //
-    pub fn get_firmware_variable_mtrr_count(&self) -> u32 {
+    pub fn get_firmware_usable_variable_mtrr_count(&self) -> u32 {
         if !self.is_mtrr_supported() {
             return 0;
         }
 
         // Assuming the existence of these functions
         let variable_mtrr_ranges_count = self.get_variable_mtrr_count();
-        let reserved_mtrr_number = self.hal.get_pcd_cpu_number_of_reserved_variable_mtrrs(); // VINEEL: PCD
+        let reserved_mtrr_number = self.hal.get_pcd_cpu_number_of_reserved_variable_mtrrs();
 
         if variable_mtrr_ranges_count < reserved_mtrr_number {
             return 0;
@@ -458,7 +458,7 @@ impl<H: HalTrait> MtrrLib<H> {
         // Get the variable MTRR settings
         let variable_mtrr_settings = self.mtrr_get_variable_mtrr(None, ranges_count);
 
-        let firmware_variable_mtrr_count = self.get_firmware_variable_mtrr_count();
+        let firmware_variable_mtrr_count = self.get_firmware_usable_variable_mtrr_count();
 
         for index in 0..firmware_variable_mtrr_count as usize {
             let entry = &variable_mtrr_settings.mtrr[index];
@@ -2413,12 +2413,7 @@ impl<H: HalTrait> MtrrLib<H> {
             self.mtrr_lib_post_mtrr_change(&mut mtrr_context);
         }
 
-        // VINEEL: Fix error code path
         self.mtrr_debug_print_all_mtrrs_worker(Some(mtrr_setting_unwrap));
-        // Exit and debug output
-        // Assuming Status is a placeholder for your actual return type
-        // Replace `Ok(())` with your actual logic for returning status
-        // println!("Result = {:?}", Status);
 
         Ok(())
     }

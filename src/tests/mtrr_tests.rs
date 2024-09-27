@@ -413,7 +413,7 @@ fn unit_test_get_firmware_variable_mtrr_count() {
         hal.initialize_mtrr_regs(&system_parameter);
         hal.set_pcd_cpu_number_of_reserved_variable_mtrrs(reserved_mtrr);
         let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
-        let res = mtrrlib.get_firmware_variable_mtrr_count();
+        let res = mtrrlib.get_firmware_usable_variable_mtrr_count();
         assert_eq!(res, system_parameter.variable_mtrr_count - reserved_mtrr);
     }
 
@@ -423,7 +423,7 @@ fn unit_test_get_firmware_variable_mtrr_count() {
         hal.initialize_mtrr_regs(&system_parameter);
         hal.set_pcd_cpu_number_of_reserved_variable_mtrrs(reserved_mtrr);
         let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
-        let res = mtrrlib.get_firmware_variable_mtrr_count();
+        let res = mtrrlib.get_firmware_usable_variable_mtrr_count();
         assert_eq!(res, 0);
     }
 
@@ -432,7 +432,7 @@ fn unit_test_get_firmware_variable_mtrr_count() {
     hal.initialize_mtrr_regs(&system_parameter);
     hal.set_pcd_cpu_number_of_reserved_variable_mtrrs(u32::MAX);
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
-    let res = mtrrlib.get_firmware_variable_mtrr_count();
+    let res = mtrrlib.get_firmware_usable_variable_mtrr_count();
     assert_eq!(res, 0);
 
     // Negative test case when MTRRs are not supported
@@ -441,7 +441,7 @@ fn unit_test_get_firmware_variable_mtrr_count() {
     hal.initialize_mtrr_regs(&system_parameter);
     hal.set_pcd_cpu_number_of_reserved_variable_mtrrs(2);
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
-    let res = mtrrlib.get_firmware_variable_mtrr_count();
+    let res = mtrrlib.get_firmware_usable_variable_mtrr_count();
     assert_eq!(res, 0);
 
     // Negative test case when Fixed MTRRs are not supported
@@ -451,7 +451,7 @@ fn unit_test_get_firmware_variable_mtrr_count() {
     hal.initialize_mtrr_regs(&system_parameter);
     hal.set_pcd_cpu_number_of_reserved_variable_mtrrs(2);
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
-    let res = mtrrlib.get_firmware_variable_mtrr_count();
+    let res = mtrrlib.get_firmware_usable_variable_mtrr_count();
     assert_eq!(res, system_parameter.variable_mtrr_count - 2);
 
     // Expect ASSERT() if variable MTRR count is > MTRR_NUMBER_OF_VARIABLE_MTRR
@@ -462,7 +462,7 @@ fn unit_test_get_firmware_variable_mtrr_count() {
         hal.initialize_mtrr_regs(&system_parameter);
         hal.set_pcd_cpu_number_of_reserved_variable_mtrrs(2);
         let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
-        let _ = mtrrlib.get_firmware_variable_mtrr_count();
+        let _ = mtrrlib.get_firmware_usable_variable_mtrr_count();
     });
 }
 
@@ -682,7 +682,7 @@ fn unit_test_mtrr_get_memory_attribute_in_variable_mtrr() {
     let variable_mtrr =
         mtrrlib.mtrr_get_memory_attribute_in_variable_mtrr(valid_mtrr_bits_mask, valid_mtrr_address_mask);
     assert!(variable_mtrr.len() <= MTRR_NUMBER_OF_VARIABLE_MTRR);
-    assert!(variable_mtrr.len() <= mtrrlib.get_firmware_variable_mtrr_count() as usize);
+    assert!(variable_mtrr.len() <= mtrrlib.get_firmware_usable_variable_mtrr_count() as usize);
 
     // Expect ASSERT() if variable MTRR count is > MTRR_NUMBER_OF_VARIABLE_MTRR
     system_parameter.mtrr_supported = true;

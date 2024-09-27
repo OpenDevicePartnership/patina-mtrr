@@ -27,11 +27,6 @@ use crate::tests::M_FIXED_MTRRS_INDEX;
 
 use super::MtrrLibSystemParameter;
 
-pub fn create_mtrr_lib_with_mock_hal(hal: MockHal) -> MtrrLib<MockHal> {
-    let mtrr_lib = MtrrLib::new(hal);
-    mtrr_lib
-}
-
 pub struct MockHal {
     fixed_mtrrs_value: [u64; MTRR_NUMBER_OF_FIXED_MTRR],
     variable_mtrrs_phys_base: [MsrIa32MtrrPhysbaseRegister; MTRR_NUMBER_OF_VARIABLE_MTRR],
@@ -284,4 +279,9 @@ impl HalTrait for MockHal {
     fn get_pcd_cpu_number_of_reserved_variable_mtrrs(&self) -> u32 {
         self.pcd_cpu_number_of_reserved_variable_mtrrs
     }
+}
+
+pub fn create_mtrr_lib_with_mock_hal(hal: MockHal) -> MtrrLib<MockHal> {
+    let mtrr_lib = MtrrLib::new(hal);
+    mtrr_lib
 }
