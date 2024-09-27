@@ -655,11 +655,9 @@ fn unit_test_mtrr_get_memory_attribute_in_variable_mtrr() {
     // println!("valid_mtrr_address_mask: {:x}", valid_mtrr_address_mask);
 
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
-    let mut variable_mtrr = [VariableMtrr::default(); MTRR_NUMBER_OF_VARIABLE_MTRR];
-    mtrrlib.mtrr_get_memory_attribute_in_variable_mtrr(
+    let variable_mtrr = mtrrlib.mtrr_get_memory_attribute_in_variable_mtrr(
         valid_mtrr_bits_mask,
         valid_mtrr_address_mask,
-        &mut variable_mtrr[..],
     );
 
     for index in 0..system_parameter.variable_mtrr_count as usize {
@@ -680,30 +678,27 @@ fn unit_test_mtrr_get_memory_attribute_in_variable_mtrr() {
 
     // Negative test case when MTRRs are not supported
     system_parameter.mtrr_supported = false;
-    let mut variable_mtrr = [VariableMtrr::default(); MTRR_NUMBER_OF_VARIABLE_MTRR];
-    let expected_variable_mtrr = [VariableMtrr::default(); MTRR_NUMBER_OF_VARIABLE_MTRR];
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
-    mtrrlib.mtrr_get_memory_attribute_in_variable_mtrr(
+    let variable_mtrr = mtrrlib.mtrr_get_memory_attribute_in_variable_mtrr(
         valid_mtrr_bits_mask,
         valid_mtrr_address_mask,
-        &mut variable_mtrr[..],
     );
-    assert!(expected_variable_mtrr == variable_mtrr);
+    assert!(variable_mtrr.len() <= MTRR_NUMBER_OF_VARIABLE_MTRR);
+    assert!(variable_mtrr.len() <= mtrrlib.get_firmware_variable_mtrr_count() as usize);
 
     // Expect ASSERT() if variable MTRR count is > MTRR_NUMBER_OF_VARIABLE_MTRR
     system_parameter.mtrr_supported = true;
     system_parameter.variable_mtrr_count = MTRR_NUMBER_OF_VARIABLE_MTRR as u32 + 1;
     let _ = panic::catch_unwind(|| {
-        let mut variable_mtrr = [VariableMtrr::default(); MTRR_NUMBER_OF_VARIABLE_MTRR];
         let mut hal = MockHal::new();
         hal.initialize_mtrr_regs(&system_parameter);
         let mtrrlib = create_mtrr_lib_with_mock_hal(hal);
-        mtrrlib.mtrr_get_memory_attribute_in_variable_mtrr(
+        let _variable_mtrr = mtrrlib.mtrr_get_memory_attribute_in_variable_mtrr(
             valid_mtrr_bits_mask,
             valid_mtrr_address_mask,
-            &mut variable_mtrr[..],
+            // &mut variable_mtrr[..],
         );
     });
 }

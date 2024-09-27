@@ -390,55 +390,6 @@ impl<H: HalTrait> MtrrLib<H> {
     }
 
     //
-    //  Worker function gets the attribute of variable MTRRs.
-    //
-    //  This function shadows the content of variable MTRRs into an
-    //  internal array: VariableMtrrRanges.
-    //
-    //  @param[in]   VariableMtrrSettings      The variable MTRR values to shadow
-    //  @param[in]   VariableMtrrRangesCount     The number of variable MTRRs
-    //  @param[in]   MtrrValidBitsMask     The mask for the valid bit of the MTRR
-    //  @param[in]   MtrrValidAddressMask  The valid address mask for MTRR
-    //  @param[out]  VariableMtrrRanges          The array to shadow variable MTRRs content
-    //
-    //  @return      Number of MTRRs which has been used.
-    //
-    fn mtrr_get_memory_attribute_in_variable_mtrr_worker(
-        &self,
-        variable_mtrr_settings: &MtrrVariableSettings,
-        variable_mtrr_ranges_count: usize,
-        mtrr_valid_bits_mask: u64,
-        mtrr_valid_address_mask: u64,
-        variable_mtrr_ranges: &mut [VariableMtrr],
-    ) -> u32 {
-        let mut used_mtrr = 0;
-
-        // zeroize variable mtrr ranges
-        unsafe {
-            core::ptr::write_bytes(variable_mtrr_ranges.as_mut_ptr(), 0, variable_mtrr_ranges.len());
-        }
-
-        for index in 0..variable_mtrr_ranges_count {
-            let entry = &variable_mtrr_settings.mtrr[index];
-            let mask = entry.mask;
-            let base = entry.base;
-
-            // Check if the MTRR is valid
-            if (mask >> 11) & 1 != 0 {
-                variable_mtrr_ranges[index].msr = index as u32;
-                variable_mtrr_ranges[index].base_address = base & mtrr_valid_address_mask;
-                variable_mtrr_ranges[index].length = ((!(mask & mtrr_valid_address_mask)) & mtrr_valid_bits_mask) + 1;
-                variable_mtrr_ranges[index].mem_type = (base & 0xff) as u8;
-                variable_mtrr_ranges[index].valid = true;
-                variable_mtrr_ranges[index].used = true;
-                used_mtrr += 1;
-            }
-        }
-
-        used_mtrr
-    }
-
-    //
     //  Convert variable MTRRs to a RAW MTRR_MEMORY_RANGE array.
     //  One MTRR_MEMORY_RANGE element is created for each MTRR setting.
     //  The routine doesn't remove the overlap or combine the near-by region.
@@ -494,11 +445,12 @@ impl<H: HalTrait> MtrrLib<H> {
         &self,
         mtrr_valid_bits_mask: u64,
         mtrr_valid_address_mask: u64,
-        variable_mtrr_ranges: &mut [VariableMtrr],
-    ) -> u32 {
+    ) -> Vec<VariableMtrr> {
+        let mut variable_mtrr_ranges: Vec<VariableMtrr> = Vec::new();
+
         // Check if MTRR is supported
         if !self.is_mtrr_supported() {
-            return 0;
+            return variable_mtrr_ranges;
         }
 
         let ranges_count = self.get_variable_mtrr_count();
@@ -506,16 +458,29 @@ impl<H: HalTrait> MtrrLib<H> {
         // Get the variable MTRR settings
         let variable_mtrr_settings = self.mtrr_get_variable_mtrr(None, ranges_count);
 
-        let firmware_mtrr_count = self.get_firmware_variable_mtrr_count();
+        let firmware_variable_mtrr_count = self.get_firmware_variable_mtrr_count();
 
-        // Get the memory attributes in the variable MTRR
-        self.mtrr_get_memory_attribute_in_variable_mtrr_worker(
-            &variable_mtrr_settings,
-            firmware_mtrr_count as usize,
-            mtrr_valid_bits_mask,
-            mtrr_valid_address_mask,
-            variable_mtrr_ranges,
-        )
+        for index in 0..firmware_variable_mtrr_count as usize {
+            let entry = &variable_mtrr_settings.mtrr[index];
+            let mask = entry.mask;
+            let base = entry.base;
+
+            // Check if the MTRR is valid
+            if (mask >> 11) & 1 != 0 {
+                variable_mtrr_ranges.push(VariableMtrr{
+                    msr: index as u32,
+                    base_address: base & mtrr_valid_address_mask,
+                    length: ((!(mask & mtrr_valid_address_mask)) & mtrr_valid_bits_mask) + 1,
+                    mem_type: (base & 0xff) as u8,
+                    valid: true,
+                    used: true,
+                });
+            } else {
+                variable_mtrr_ranges.push(VariableMtrr::default());
+            }
+        }
+
+        variable_mtrr_ranges
     }
 
     //
@@ -2199,10 +2164,8 @@ impl<H: HalTrait> MtrrLib<H> {
         // 2. Apply the above-1MB memory attribute settings
         if variable_mtrr_needed {
             // 2.1. Read all variable MTRRs and convert to Ranges.
-            let variable_mtrr_settings = self.mtrr_get_variable_mtrr(
-                mtrr_setting.as_deref(),
-                original_variable_mtrr_ranges_count,
-            );
+            let variable_mtrr_settings =
+                self.mtrr_get_variable_mtrr(mtrr_setting.as_deref(), original_variable_mtrr_ranges_count);
             Self::mtrr_lib_get_raw_variable_ranges(
                 &variable_mtrr_settings,
                 original_variable_mtrr_ranges_count as usize,
