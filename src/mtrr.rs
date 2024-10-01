@@ -57,7 +57,7 @@ fn o(start: u16, index: u16, vertex_count: u16) -> usize {
     (index as usize) * vertex_count as usize + (start as usize)
 }
 
-pub struct MtrrLib<H: HalTrait> {
+pub struct MtrrLib<H: HalTrait = Hal> {
     hal: H,
 }
 
@@ -2827,7 +2827,7 @@ impl<H: HalTrait> MtrrLib<H> {
     }
 }
 
-pub fn create_mtrr_lib() -> MtrrLib<Hal> {
+pub fn create_mtrr_lib() -> MtrrLib {
     let hal = Hal::new();
     let mtrr_lib = MtrrLib::new(hal);
     mtrr_lib
