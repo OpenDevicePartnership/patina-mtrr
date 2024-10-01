@@ -2829,6 +2829,5 @@ impl<H: HalTrait> MtrrLib<H> {
 
 pub fn create_mtrr_lib() -> MtrrLib {
     let hal = Hal::new();
-    let mtrr_lib = MtrrLib::new(hal);
-    mtrr_lib
+    MtrrLib::new(hal)
 }
