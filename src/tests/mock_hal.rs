@@ -133,23 +133,23 @@ impl HalTrait for MockHal {
         self.interrupt_state
     }
 
-    /// Write CR3 register. Also invalidates TLB.
+    /// Write to fake CR3 register.
     fn asm_write_cr3(&mut self, value: u64) {
         self.cr3 = value;
     }
 
-    /// Read CR3 register.
+    /// Read from fake CR3 register.
     fn asm_read_cr3(&self) -> u64 {
         self.cr3
     }
 
-    /// Write CR4 register. Also invalidates TLB.
+    /// Write to fake CR4 register.
     #[inline(always)]
     fn asm_write_cr4(&mut self, value: u64) {
         self.cr4 = value;
     }
 
-    /// Read CR4 register.
+    /// Read from fake CR4 register.
     #[inline(always)]
     fn asm_read_cr4(&self) -> u64 {
         self.cr4

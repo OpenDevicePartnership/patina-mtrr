@@ -77,7 +77,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @retval FALSE MTRR is not supported when both fixed MTRR is not supported and max
     //                number of variable MTRRs is 0.
     //
-    fn mtrr_lib_is_mtrr_supported(&self) -> MtrrResult<(bool, u32)> {
+    fn mtrr_lib_is_mtrr_supported_internal(&self) -> MtrrResult<(bool, u32)> {
         let edx: u32;
 
         // Check CPUID(1).EDX[12] for MTRR capability
@@ -330,7 +330,7 @@ impl<H: HalTrait> MtrrLib<H> {
         // Find the begin offset in fixed MTRR and calculate byte offset of left shift
         let entry = &MMTRR_LIB_FIXED_MTRR_TABLE[msr_index as usize];
         if ((*base - entry.base_address as u64) % entry.length as u64) != 0 {
-            return Err(MtrrError::ReturnUnsupported);
+            return Err(MtrrError::FixedRangeMtrrBaseAddressNotAligned);
         }
 
         left_byte_shift = ((*base - entry.base_address as u64) / entry.length as u64) as u32;
@@ -342,7 +342,7 @@ impl<H: HalTrait> MtrrLib<H> {
             right_byte_shift = 0;
         } else {
             if (*length % entry.length as u64) != 0 {
-                return Err(MtrrError::ReturnUnsupported);
+                return Err(MtrrError::FixedRangeMtrrLengthNotAligned);
             }
 
             right_byte_shift = 8 - left_byte_shift - (*length / entry.length as u64) as u32;
@@ -735,10 +735,6 @@ impl<H: HalTrait> MtrrLib<H> {
         }
 
         // Reserve space for the new ranges
-        // for i in (*working_ranges_count - delta_count)..*working_ranges_count {
-        //     working_ranges[i + delta_count] = working_ranges[i].clone();
-        // }
-
         for i in (0..(*working_ranges_count - end_index - 1)).rev() {
             let src = i + end_index + 1;
             let dest = (i as i64 + end_index as i64 + 1 - delta_count) as usize;
@@ -912,7 +908,7 @@ impl<H: HalTrait> MtrrLib<H> {
         mem_type: MtrrMemoryCacheType,
     ) -> MtrrResult<()> {
         if *mtrr_count == mtrr_capacity {
-            return Err(MtrrError::ReturnOutOfResources);
+            return Err(MtrrError::VariableRangeMtrrExhausted);
         }
 
         mtrrs[*mtrr_count].base_address = base_address;
@@ -1999,7 +1995,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //                                    BaseAddress and Length cannot be modified.
     //  @retval RETURN_BUFFER_TOO_SMALL   The scratch buffer is too small for MTRR calculation.
     //
-    pub fn mtrr_set_memory_attributes_in_mtrr_settings(
+    fn mtrr_set_memory_attributes_in_mtrr_settings(
         &mut self,
         mtrr_setting: Option<&mut MtrrSettings>,
         scratch: &mut [u8],
@@ -2054,7 +2050,9 @@ impl<H: HalTrait> MtrrLib<H> {
         }
 
         // 1. Validate the parameters
-        let Ok((fixed_mtrr_supported, original_variable_mtrr_ranges_count)) = self.mtrr_lib_is_mtrr_supported() else {
+        let Ok((fixed_mtrr_supported, original_variable_mtrr_ranges_count)) =
+            self.mtrr_lib_is_mtrr_supported_internal()
+        else {
             return Err(MtrrError::ReturnUnsupported);
         };
 
@@ -2474,7 +2472,7 @@ impl<H: HalTrait> MtrrLib<H> {
         let mut mtrr_setting = MtrrSettings::default();
 
         // Check if MTRR is supported
-        let Ok((fixed_mtrr_supported, variable_mtrr_ranges_count)) = self.mtrr_lib_is_mtrr_supported() else {
+        let Ok((fixed_mtrr_supported, variable_mtrr_ranges_count)) = self.mtrr_lib_is_mtrr_supported_internal() else {
             return mtrr_setting;
         };
 
@@ -2510,7 +2508,7 @@ impl<H: HalTrait> MtrrLib<H> {
         let mut mtrr_context = MtrrContext::default();
 
         // Check if MTRR is supported
-        let Ok((fixed_mtrr_supported, _)) = self.mtrr_lib_is_mtrr_supported() else {
+        let Ok((fixed_mtrr_supported, _)) = self.mtrr_lib_is_mtrr_supported_internal() else {
             return;
         };
 
@@ -2542,7 +2540,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @retval FALSE MTRR is not supported.
     //
     pub fn is_mtrr_supported(&self) -> bool {
-        self.mtrr_lib_is_mtrr_supported().is_ok()
+        self.mtrr_lib_is_mtrr_supported_internal().is_ok()
     }
 
     //

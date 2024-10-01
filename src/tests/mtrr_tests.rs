@@ -4,7 +4,7 @@ use crate::{
         MsrIa32MtrrDefType, MsrIa32MtrrPhysbaseRegister, MsrIa32MtrrPhysmaskRegister, MtrrFixedSettings,
         MtrrMemoryCacheType, MtrrMemoryRange, MtrrSettings, MtrrVariableSetting, MtrrVariableSettings,
         MSR_IA32_MTRR_DEF_TYPE, MSR_IA32_MTRR_PHYSBASE0, MSR_IA32_MTRR_PHYSMASK0, MTRR_NUMBER_OF_FIXED_MTRR,
-        MTRR_NUMBER_OF_VARIABLE_MTRR, SCRATCH_BUFFER_SIZE,
+        MTRR_NUMBER_OF_VARIABLE_MTRR,
     },
     tests::M_DEFAULT_SYSTEM_PARAMETER,
     utils::lshift_u64,
@@ -766,7 +766,6 @@ fn unit_test_invalid_memory_layouts_impl(system_parameter: &MtrrLibSystemParamet
     let max_address: u64;
     let mut base_address: u64;
     let mut length: u64;
-    let mut scratch_size: usize;
 
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(system_parameter);
@@ -796,16 +795,15 @@ fn unit_test_invalid_memory_layouts_impl(system_parameter: &MtrrLibSystemParamet
         assert!(status.is_err());
     }
 
-    let mut scratch_buffer: [u8; SCRATCH_BUFFER_SIZE] = [0u8; SCRATCH_BUFFER_SIZE];
-    scratch_size = 0;
-    let status = mtrrlib.mtrr_set_memory_attributes_in_mtrr_settings(
-        None,
-        &mut scratch_buffer,
-        &mut scratch_size,
-        &ranges,
-        range_count as usize,
-    );
-    assert!(status.is_err());
+    for range in &ranges {
+        let status = mtrrlib.mtrr_set_memory_attribute_in_mtrr_settings(
+            None,
+            range.base_address,
+            range.length,
+            range.mem_type,
+        );
+        assert!(status.is_err());
+    }
 }
 
 #[test]
