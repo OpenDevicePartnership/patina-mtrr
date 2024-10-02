@@ -182,7 +182,7 @@ impl fmt::Display for MtrrSettings {
     }
 }
 
-#[repr(u32)]
+#[repr(u8)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum MtrrMemoryCacheType {
     #[default]

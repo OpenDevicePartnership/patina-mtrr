@@ -12,6 +12,7 @@ use crate::structs::MsrIa32MtrrPhysbaseRegister;
 use crate::structs::MsrIa32MtrrPhysmaskRegister;
 use crate::structs::MsrIa32MtrrcapRegister;
 use crate::structs::MsrIa32TmeActivateRegister;
+use crate::structs::MtrrMemoryCacheType;
 use crate::structs::CPUID_EXTENDED_FUNCTION;
 use crate::structs::CPUID_SIGNATURE;
 use crate::structs::CPUID_VERSION_INFO;
@@ -52,7 +53,7 @@ impl MockHal {
             fixed_mtrrs_value: Default::default(),
             variable_mtrrs_phys_base: Default::default(),
             variable_mtrrs_phys_mask: Default::default(),
-            def_type_msr: Default::default(),
+            def_type_msr: MsrIa32MtrrDefType::new().with_mem_type(MtrrMemoryCacheType::Uncacheable as u8),
             mtrr_cap_msr: Default::default(),
             tme_activate_msr: Default::default(),
             cpuid_version_info_edx: Default::default(),
