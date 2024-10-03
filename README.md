@@ -1,126 +1,105 @@
 # Introduction
 
-This repo include the x64/Arm64 paging logic.
+MTRR(Memory Type Range Registers) is described in 7.7 Vol 2 of AMD64 Architecture
+Programmer's Manual and 12.11 Vol 3A of Intel Software Developers Manual
 
 # Getting Started
 
 ## Public API:
-
-The main traits/structs for public consumtion are `PageTable/PageAllocator`
-and `PageTableFactory`.
-
 ```rust
-pub trait PageTable {
-    /// Function to map the designated memory region to with provided
-    /// attributes.
-    ///
-    /// ## Arguments
-    /// * `address` - The memory address to map.
-    /// * `size` - The memory size to map.
-    /// * `attributes` - The memory attributes to map. The acceptable
-    ///   input will be EFI_MEMORY_XP, EFI_MEMORY_RO, as well as EFI_MEMORY_UC,
-    ///   EFI_MEMORY_WC, EFI_MEMORY_WT, EFI_MEMORY_WB, EFI_MEMORY_UCE
-    ///
-    /// ## Errors
-    /// * Returns `Ok(())` if successful else `Err(PtError)` if failed
-    fn map_memory_region(&mut self, address: u64, size: u64, attributes: u64) -> PtResult<()>;
+   pub fn create_mtrr_lib() -> MtrrLib;
 
-    /// Function to unmap the memory region provided by the caller. The
-    /// requested memory region must be fully mapped prior to this call. Unlike
-    /// remap_memory_region, the entire region does not have to possess the same
-    /// attribute for this operation.
-    ///
-    /// ## Arguments
-    /// * `address` - The memory address to map.
-    /// * `size` - The memory size to map.
-    ///
-    /// ## Errors
-    /// * Returns `Ok(())` if successful else `Err(PtError)` if failed
-    fn unmap_memory_region(&mut self, address: u64, size: u64) -> PtResult<()>;
+   pub fn is_mtrr_supported(&self) -> bool;
 
-    /// Function to remap the memory region provided by the caller. The memory
-    /// provided has to be previously mapped and has the same memory attributes
-    /// for the entire memory region.
-    ///
-    /// ## Arguments
-    /// * `address` - The memory address to map.
-    /// * `size` - The memory size to map.
-    /// * `attributes` - The memory attributes to map.
-    ///
-    /// ## Errors
-    /// * Returns `Ok(())` if successful else `Err(PtError)` if failed
-    fn remap_memory_region(&mut self, address: u64, size: u64, attributes: u64) -> PtResult<()>;
+   pub fn mtrr_get_all_mtrrs(&self) -> MtrrSettings;
 
-    /// Function to install the page table from this page table instance.
-    ///
-    /// ## Errors
-    /// * Returns `Ok(())` if successful else `Err(PtError)` if failed
-    fn install_page_table(&self) -> PtResult<()>;
+   pub fn mtrr_set_all_mtrrs(&mut self, mtrr_setting: &MtrrSettings);
 
-    /// Function to query the mapping status and return attribute of supplied
-    /// memory region if it is properly and consistently mapped.
-    ///
-    /// ## Arguments
-    /// * `address` - The memory address to map.
-    /// * `size` - The memory size to map.
-    ///
-    /// ## Returns
-    /// Returns memory attributes
-    ///
-    /// ## Errors
-    /// * Returns `Ok(u64)` if successful else `Err(PtError)` if failed
-    fn query_memory_region(&self, address: u64, size: u64) -> PtResult<u64>;
-}
-```
+   pub fn mtrr_get_memory_attribute(&self, address: u64) -> MtrrMemoryCacheType;
 
-```rust
-/// PageAllocator trait facilitates `allocate()` method for allocating new pages
-pub trait PageAllocator {
-    /// Allocate aligned pages from physical memory.
-    ///
-    /// ## Arguments
-    /// * `align` - on x64 this will be 4KB page alignment.
-    /// * `size` - on x64 this will be 4KB page size.
-    ///
-    /// ## Returns
-    /// * `PtResult<u64>` - Physcial address of the allocated page.
-    fn allocate_page(&mut self, align: u64, size: u64) -> PtResult<u64>;
-}
-```
+   pub fn mtrr_set_memory_attribute(
+      &mut self,
+      base_address: u64,
+      length: u64,
+      attribute: MtrrMemoryCacheType,
+   ) -> MtrrResult<()>;
 
-```rust
-impl PageTableFactory {
-    /// Initialize the page table instance by providing the page allocator trait
-    /// object provided by the core. This object will be used to initialize the
-    /// root page table and return the page table instance.
-    ///
-    /// ## Arguments
-    /// * `page_allocator` - The page allocator trait object provided by the
-    ///   core.
-    ///
-    /// ## Returns
-    /// * `PageTable` - The page table instance.
-    ///
-    /// ## Errors
-    pub fn init(
-        page_allocator: Box<dyn PageAllocator>,
-        page_table_type: PagingType,
-    ) -> PtResult<Box<dyn PageTable>>;
-}
+    pub fn mtrr_set_memory_attributes(
+        &mut self,
+        ranges: &[MtrrMemoryRange],
+    ) -> MtrrResult<()>;
+
+   pub fn mtrr_get_memory_ranges(
+      &self
+   ) -> MtrrResult<Vec<MtrrMemoryRange>>;
+
+   pub fn mtrr_debug_print_all_mtrrs(&self);
 ```
 
 ## API usage:
 ```rust
-    let page_allocator = ...;
+fn mtrr_lib_usage() {
+    // Create MTRR library
+    let mut mtrrlib = create_mtrr_lib();
 
-    let pt = PageTableFactory::init(page_allocator, PagingType::Paging4KB4Level)?;
+    // Get the current MTRR settings
+    let mut mtrr_settings = mtrrlib.mtrr_get_all_mtrrs();
 
-    let attributes = EFI_MEMORY_RP;
-    let res = pt.map_memory_region(address, size, attributes);
-    ...
-    let res = pt.unmap_memory_region(address, size);
-    ...
+    // Set default mem type to WriteBack and appropriately update the fixed mtrr
+    mtrr_settings.mtrr_def_type_reg.set_mem_type(MtrrMemoryCacheType::WriteBack as u8);
+    for index in 0..mtrr_settings.fixed.mtrr.len() {
+        mtrr_settings.fixed.mtrr[index] = 0x0606060606060606; //WriteBack
+    }
+
+    // Set the MTRR settings
+    mtrrlib.mtrr_set_all_mtrrs(&mtrr_settings);
+
+
+    const BASE_128KB: u64 = 0x00020000;
+    const BASE_512KB: u64 = 0x00080000;
+    const BASE_1MB: u64 = 0x00100000;
+    const BASE_4GB: u64 = 0x0000000100000000;
+
+    //
+    // Set memory range from 640KB to 1MB to uncacheable
+    //
+    let status = mtrrlib.mtrr_set_memory_attribute(
+        BASE_512KB + BASE_128KB,
+        BASE_1MB - (BASE_512KB + BASE_128KB),
+        MtrrMemoryCacheType::Uncacheable,
+    );
+    assert!(status.is_ok());
+
+    //
+    // Set the memory range from the start of the 32-bit MMIO area (32-bit PCI
+    // MMIO aperture on i440fx, PCIEXBAR on q35) to 4GB as uncacheable.
+    //
+    let status = mtrrlib.mtrr_set_memory_attribute(0xB0000000, BASE_4GB - 0xB0000000, MtrrMemoryCacheType::Uncacheable);
+    assert!(status.is_ok());
+
+    // MTRR Settings:
+    // =============
+    // MTRR Default Type: 0x00000000000c06
+    // Fixed MTRR[00]   : 0x606060606060606
+    // Fixed MTRR[01]   : 0x606060606060606
+    // Fixed MTRR[02]   : 0x00000000000000
+    // Fixed MTRR[03]   : 0x00000000000000
+    // Fixed MTRR[04]   : 0x00000000000000
+    // Fixed MTRR[05]   : 0x00000000000000
+    // Fixed MTRR[06]   : 0x00000000000000
+    // Fixed MTRR[07]   : 0x00000000000000
+    // Fixed MTRR[08]   : 0x00000000000000
+    // Fixed MTRR[09]   : 0x00000000000000
+    // Fixed MTRR[10]   : 0x00000000000000
+    // Variable MTRR[00]: Base=0x000000c0000000 Mask=0x00003fc0000800
+    // Variable MTRR[01]: Base=0x000000b0000000 Mask=0x00003ff0000800
+    // Memory Ranges:
+    // ====================================
+    // WB:0x00000000000000-0x0000000009ffff
+    // UC:0x000000000a0000-0x000000000fffff
+    // WB:0x00000000100000-0x000000afffffff
+    // UC:0x000000b0000000-0x000000ffffffff
+    // WB:0x00000100000000-0x00003fffffffff
+}
+
 ```
-
-## Reference:
-More reference test cases are in `tests\x64_4kb_page_table_tests.rs`
