@@ -862,10 +862,6 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_setti
     let mut actual_variable_mtrr_usage: u32 = 0;
     let mut actual_memory_ranges_count: usize;
 
-    let mut returned_memory_ranges = [MtrrMemoryRange::default();
-        MTRR_NUMBER_OF_FIXED_MTRR * std::mem::size_of::<u64>() + 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 1];
-    let mut returned_memory_ranges_count: usize;
-
     println!(
         "------------unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_settings begin------------"
     );
@@ -979,16 +975,16 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_setti
     );
     assert!(raw_mtrr_range_count >= actual_variable_mtrr_usage);
 
-    returned_memory_ranges_count = returned_memory_ranges.len();
-    status = mtrrlib.mtrr_get_memory_ranges(&mut returned_memory_ranges[..], Some(&mut returned_memory_ranges_count));
-    assert!(status.is_ok());
-    println!("--- Returned Memory Ranges [{}] ---", returned_memory_ranges_count);
-    dump_memory_ranges(&returned_memory_ranges, returned_memory_ranges_count);
+    let returned_memory_ranges = mtrrlib.mtrr_get_memory_ranges();
+    assert!(returned_memory_ranges.is_ok());
+    let returned_memory_ranges = returned_memory_ranges.unwrap();
+    println!("--- Returned Memory Ranges [{}] ---", returned_memory_ranges.len());
+    dump_memory_ranges(&returned_memory_ranges, returned_memory_ranges.len());
     verify_memory_ranges(
         &expected_memory_ranges,
         expected_memory_ranges_count,
         &returned_memory_ranges,
-        returned_memory_ranges_count,
+        returned_memory_ranges.len(),
     );
 
     println!(
@@ -1017,10 +1013,6 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr
         MTRR_NUMBER_OF_FIXED_MTRR * std::mem::size_of::<u64>() + 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 1];
     let mut actual_variable_mtrr_usage: u32 = 0;
     let mut actual_memory_ranges_count: usize;
-
-    let mut returned_memory_ranges = [MtrrMemoryRange::default();
-        MTRR_NUMBER_OF_FIXED_MTRR * std::mem::size_of::<u64>() + 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 1];
-    let mut returned_memory_ranges_count: usize;
 
     println!(
         "------------unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr_settings begin------------"
@@ -1132,16 +1124,16 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr
     );
     assert!(raw_mtrr_range_count >= actual_variable_mtrr_usage);
 
-    returned_memory_ranges_count = returned_memory_ranges.len();
-    status = mtrrlib.mtrr_get_memory_ranges(&mut returned_memory_ranges[..], Some(&mut returned_memory_ranges_count));
-    assert!(status.is_ok());
-    println!("--- Returned Memory Ranges [{}] ---", returned_memory_ranges_count);
-    dump_memory_ranges(&returned_memory_ranges, returned_memory_ranges_count);
+    let returned_memory_ranges = mtrrlib.mtrr_get_memory_ranges();
+    assert!(returned_memory_ranges.is_ok());
+    let returned_memory_ranges = returned_memory_ranges.unwrap();
+    println!("--- Returned Memory Ranges [{}] ---", returned_memory_ranges.len());
+    dump_memory_ranges(&returned_memory_ranges, returned_memory_ranges.len());
     verify_memory_ranges(
         &expected_memory_ranges,
         expected_memory_ranges_count,
         &returned_memory_ranges,
-        returned_memory_ranges_count,
+        returned_memory_ranges.len(),
     );
 
     println!(
@@ -1150,7 +1142,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr
 }
 
 #[test]
-fn unit_test_mtrr_lib_use_case() {
+fn unit_test_mtrr_lib_usage() {
     // Initialize the hardware abstraction layer
     let system_parameter = MtrrLibSystemParameter::new(38, true, true, MtrrMemoryCacheType::Uncacheable, 12, 0);
     let mut hal = MockHal::new();

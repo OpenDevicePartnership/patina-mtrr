@@ -2308,10 +2308,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //                                    Caller should use MtrrSetMemoryAttributesInMtrrSettings() to specify
     //                                    external scratch buffer.
     //
-    pub fn mtrr_set_memory_attributes(
-        &mut self,
-        ranges: &[MtrrMemoryRange],
-    ) -> MtrrResult<()> {
+    pub fn mtrr_set_memory_attributes(&mut self, ranges: &[MtrrMemoryRange]) -> MtrrResult<()> {
         let mut scratch: [u8; SCRATCH_BUFFER_SIZE] = [0; SCRATCH_BUFFER_SIZE];
         let mut scratch_size = scratch.len();
 
@@ -2494,11 +2491,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @retval RETURN_BUFFER_TOO_SMALL  *RangeCount is too small.
     //  @retval RETURN_SUCCESS           Ranges are successfully returned.
     //
-    pub fn mtrr_get_memory_ranges(
-        &self,
-        ranges: &mut [MtrrMemoryRange],
-        range_count: Option<&mut usize>,
-    ) -> MtrrResult<()> {
+    pub fn mtrr_get_memory_ranges(&self) -> MtrrResult<Vec<MtrrMemoryRange>> {
         // Define the local structures and variables
         let mtrrs: MtrrSettings;
         let mut raw_variable_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_VARIABLE_MTRR] = Default::default();
@@ -2506,17 +2499,6 @@ impl<H: HalTrait> MtrrLib<H> {
             [MtrrMemoryRange::default(); MTRR_NUMBER_OF_LOCAL_MTRR_RANGES];
 
         let mut all_range_count = 1;
-
-        // Validate parameters
-        if range_count.is_none() {
-            return Err(MtrrError::ReturnInvalidParameter);
-        }
-
-        let range_count = range_count.unwrap();
-
-        if *range_count != 0 && ranges.is_empty() {
-            return Err(MtrrError::ReturnInvalidParameter);
-        }
 
         // Determine the MTRR settings to use
         mtrrs = self.mtrr_get_all_mtrrs();
@@ -2554,7 +2536,7 @@ impl<H: HalTrait> MtrrLib<H> {
             );
 
             if status.is_err() {
-                return status;
+                return Err(status.unwrap_err());
             }
 
             if mtrr_def_type.fe() {
@@ -2567,16 +2549,7 @@ impl<H: HalTrait> MtrrLib<H> {
             }
         }
 
-        if *range_count < all_range_count {
-            *range_count = all_range_count;
-            return Err(MtrrError::ReturnBufferTooSmall);
-        }
-
-        for i in 0..all_range_count {
-            ranges[i] = all_ranges[i];
-        }
-        *range_count = all_range_count;
-        Ok(())
+        Ok(all_ranges[..all_range_count].to_vec())
     }
 
     //
@@ -2591,24 +2564,14 @@ impl<H: HalTrait> MtrrLib<H> {
     pub fn mtrr_debug_print_all_mtrrs(&self) {
         // Initialize local variables
         let mtrrs: MtrrSettings;
-        let status;
-        let mut range_count: usize;
         let mut contain_variable_mtrr = false;
-
-        // Fixed-size arrays instead of vectors
-        let mut ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_LOCAL_MTRR_RANGES] =
-            [MtrrMemoryRange::default(); MTRR_NUMBER_OF_LOCAL_MTRR_RANGES];
 
         // Determine which MTRR settings to use
         mtrrs = self.mtrr_get_all_mtrrs();
 
-        range_count = ranges.len();
-        status = self.mtrr_get_memory_ranges(&mut ranges, Some(&mut range_count));
-
-        if status.is_err() {
-            println!("MTRR is not enabled.");
+        let Ok(ranges) = self.mtrr_get_memory_ranges() else {
             return;
-        }
+        };
 
         // Dump RAW MTRR contents
         println!("MTRR Settings:");
@@ -2641,7 +2604,7 @@ impl<H: HalTrait> MtrrLib<H> {
         // Dump MTRR setting in ranges
         println!("Memory Ranges:");
         println!("====================================");
-        for index in 0..range_count {
+        for index in 0..ranges.len() {
             let cache_type_name = MMTRR_MEMORY_CACHE_TYPE_SHORT_NAME[ranges[index].mem_type as usize];
             println!(
                 "{}:{:#016x}-{:#016x}",
