@@ -148,26 +148,26 @@ impl HalTrait for Hal {
     }
 
     fn asm_read_msr64(&self, msr: u32) -> u64 {
-        let (mut _high, mut _low): (u32, u32) = (0, 0);
+        let (mut high, mut low): (u32, u32);
         unsafe {
             asm!(
                 "rdmsr",
                 in("ecx") msr,
-                out("eax") _low, out("edx") _high,
+                out("eax") low, out("edx") high,
                 options(nomem, nostack, preserves_flags),
             );
         }
-        ((_high as u64) << 32) | (_low as u64)
+        ((high as u64) << 32) | (low as u64)
     }
 
     fn asm_write_msr64(&mut self, msr: u32, value: u64) {
-        let _low = value as u32;
-        let _high = (value >> 32) as u32;
+        let low = value as u32;
+        let high = (value >> 32) as u32;
         unsafe {
             asm!(
                 "wrmsr",
                 in("ecx") msr,
-                in("eax") _low, in("edx") _high,
+                in("eax") low, in("edx") high,
                 options(nostack, preserves_flags),
             );
         }
