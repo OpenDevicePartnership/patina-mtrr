@@ -195,7 +195,6 @@ impl HalTrait for Hal {
     }
 
     fn get_pcd_cpu_number_of_reserved_variable_mtrrs(&self) -> u32 {
-        // Implementation depends on how PCD values are accessed in your Rust environment
         // This is a placeholder value
         0 // Example reserved MTRR number
     }

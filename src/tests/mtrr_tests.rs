@@ -57,9 +57,8 @@ fn verify_memory_ranges(
 fn dump_memory_ranges(ranges: &[MtrrMemoryRange], range_count: usize) {
     for index in 0..range_count {
         println!(
-            "\t{{ [0x{:016x} - 0x{:016x}], 0x{:016x}, {:?} }},",
+            "\t{{0x{:016x}, 0x{:016x}, {:?} }},",
             ranges[index].base_address,
-            ranges[index].base_address + ranges[index].length,
             ranges[index].length,
             ranges[index].mem_type
         );
