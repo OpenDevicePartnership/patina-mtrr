@@ -2,7 +2,7 @@
 extern crate alloc;
 mod error;
 pub mod mtrr;
-mod structs;
+pub mod structs;
 mod utils;
 
 mod hal;

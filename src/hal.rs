@@ -33,6 +33,12 @@ impl Hal {
     }
 }
 
+impl Default for Hal {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HalTrait for Hal {
     fn save_and_disable_interrupts(&mut self) -> bool {
         let interrupt_state = self.get_interrupt_state();

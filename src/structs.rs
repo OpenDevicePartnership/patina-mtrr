@@ -2,88 +2,9 @@ use core::fmt;
 
 use bitfield_struct::bitfield;
 
-// Firmware needs to reserve 2 MTRRs for OS.
-// Note: It is replaced by PCD PcdCpuNumberOfReservedVariableMtrrs.
-// const RESERVED_FIRMWARE_VARIABLE_MTRR_NUMBER: usize = 2;
-
-pub const MSR_IA32_MTRRCAP: u32 = 0x000000FE; // Example MSR index for MSR_IA32_MTRRCAP
-pub const MSR_IA32_MTRR_DEF_TYPE: u32 = 0x000002FF;
-pub const MTRR_NUMBER_OF_VARIABLE_MTRR: usize = 32; // Adjust based on the actual number
-pub const MTRR_NUMBER_OF_FIXED_MTRR: usize = 11;
-pub const MTRR_NUMBER_OF_WORKING_MTRR_RANGES: usize = 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 2;
-pub const MTRR_NUMBER_OF_LOCAL_MTRR_RANGES: usize =
-    8 * MTRR_NUMBER_OF_FIXED_MTRR + 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 1;
-
-pub const SIZE_1MB: u32 = 0x000100000;
-pub const SIZE_64KB: u32 = 0x00010000;
-pub const SIZE_16KB: u32 = 0x00004000;
-pub const SIZE_4KB: u32 = 0x00001000;
-pub const OR_SEED: u64 = 0x0101010101010101;
-pub const CLEAR_SEED: u64 = 0xFFFFFFFFFFFFFFFF;
-pub const SCRATCH_BUFFER_SIZE: usize = 4 * SIZE_4KB as usize;
-
-// Fixed MTRR msr
-pub const MSR_IA32_MTRR_FIX64K_00000: u32 = 0x00000250;
-pub const MSR_IA32_MTRR_FIX16K_80000: u32 = 0x00000258;
-pub const MSR_IA32_MTRR_FIX16K_A0000: u32 = 0x00000259;
-pub const MSR_IA32_MTRR_FIX4K_C0000: u32 = 0x00000268;
-pub const MSR_IA32_MTRR_FIX4K_C8000: u32 = 0x00000269;
-pub const MSR_IA32_MTRR_FIX4K_D0000: u32 = 0x0000026A;
-pub const MSR_IA32_MTRR_FIX4K_D8000: u32 = 0x0000026B;
-pub const MSR_IA32_MTRR_FIX4K_E0000: u32 = 0x0000026C;
-pub const MSR_IA32_MTRR_FIX4K_E8000: u32 = 0x0000026D;
-pub const MSR_IA32_MTRR_FIX4K_F0000: u32 = 0x0000026E;
-pub const MSR_IA32_MTRR_FIX4K_F8000: u32 = 0x0000026F;
-
-// Table for fixed MTRRs
-pub const MMTRR_LIB_FIXED_MTRR_TABLE: [FixedMtrr; 11] = [
-    FixedMtrr { msr: MSR_IA32_MTRR_FIX64K_00000, base_address: 0, length: SIZE_64KB },
-    FixedMtrr { msr: MSR_IA32_MTRR_FIX16K_80000, base_address: 0x80000, length: SIZE_16KB },
-    FixedMtrr { msr: MSR_IA32_MTRR_FIX16K_A0000, base_address: 0xA0000, length: SIZE_16KB },
-    FixedMtrr { msr: MSR_IA32_MTRR_FIX4K_C0000, base_address: 0xC0000, length: SIZE_4KB },
-    FixedMtrr { msr: MSR_IA32_MTRR_FIX4K_C8000, base_address: 0xC8000, length: SIZE_4KB },
-    FixedMtrr { msr: MSR_IA32_MTRR_FIX4K_D0000, base_address: 0xD0000, length: SIZE_4KB },
-    FixedMtrr { msr: MSR_IA32_MTRR_FIX4K_D8000, base_address: 0xD8000, length: SIZE_4KB },
-    FixedMtrr { msr: MSR_IA32_MTRR_FIX4K_E0000, base_address: 0xE0000, length: SIZE_4KB },
-    FixedMtrr { msr: MSR_IA32_MTRR_FIX4K_E8000, base_address: 0xE8000, length: SIZE_4KB },
-    FixedMtrr { msr: MSR_IA32_MTRR_FIX4K_F0000, base_address: 0xF0000, length: SIZE_4KB },
-    FixedMtrr { msr: MSR_IA32_MTRR_FIX4K_F8000, base_address: 0xF8000, length: SIZE_4KB },
-];
-
-// Variable MTRR msr
-pub const MSR_IA32_MTRR_PHYSBASE0: u32 = 0x00000200;
-// pub const MSR_IA32_MTRR_PHYSBASE1: u32 = 0x00000202;
-// pub const MSR_IA32_MTRR_PHYSBASE2: u32 = 0x00000204;
-// pub const MSR_IA32_MTRR_PHYSBASE3: u32 = 0x00000206;
-// pub const MSR_IA32_MTRR_PHYSBASE4: u32 = 0x00000208;
-// pub const MSR_IA32_MTRR_PHYSBASE5: u32 = 0x0000020A;
-// pub const MSR_IA32_MTRR_PHYSBASE6: u32 = 0x0000020C;
-// pub const MSR_IA32_MTRR_PHYSBASE7: u32 = 0x0000020E;
-// pub const MSR_IA32_MTRR_PHYSBASE8: u32 = 0x00000210;
-// pub const MSR_IA32_MTRR_PHYSBASE9: u32 = 0x00000212;
-
-pub const MSR_IA32_MTRR_PHYSMASK0: u32 = 0x00000201;
-// pub const MSR_IA32_MTRR_PHYSMASK1: u32 = 0x00000203;
-// pub const MSR_IA32_MTRR_PHYSMASK2: u32 = 0x00000205;
-// pub const MSR_IA32_MTRR_PHYSMASK3: u32 = 0x00000207;
-// pub const MSR_IA32_MTRR_PHYSMASK4: u32 = 0x00000209;
-// pub const MSR_IA32_MTRR_PHYSMASK5: u32 = 0x0000020B;
-// pub const MSR_IA32_MTRR_PHYSMASK6: u32 = 0x0000020D;
-// pub const MSR_IA32_MTRR_PHYSMASK7: u32 = 0x0000020F;
-// pub const MSR_IA32_MTRR_PHYSMASK8: u32 = 0x00000211;
-// pub const MSR_IA32_MTRR_PHYSMASK9: u32 = 0x00000213;
-
-// Array of MTRR memory cache type short names
-pub const MMTRR_MEMORY_CACHE_TYPE_SHORT_NAME: [&str; 8] = [
-    "UC", // CacheUncacheable
-    "WC", // CacheWriteCombining
-    "R*", // Invalid
-    "R*", // Invalid
-    "WT", // CacheWriteThrough
-    "WP", // CacheWriteProtected
-    "WB", // CacheWriteBack
-    "R*", // Invalid
-];
+//
+// public structs/definitions
+//
 
 // Structure to describe a fixed MTRR
 #[repr(C)]
@@ -125,6 +46,23 @@ pub struct MtrrVariableSettings {
 #[derive(Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MtrrFixedSettings {
     pub mtrr: [u64; MTRR_NUMBER_OF_FIXED_MTRR],
+}
+
+// translated from MSR_IA32_MTRR_DEF_TYPE_REGISTER in
+// MU_BASECORE\MdePkg\Include\Register\Intel\ArchitecturalMsr.h
+#[bitfield(u64)]
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+pub struct MsrIa32MtrrDefType {
+    #[bits(3)]
+    pub mem_type: u8, // [Bits 2:0] Default Memory Type (3 bits)
+    #[bits(7)]
+    pub reserved1: u8, // [Bits 9:3] Reserved (7 bits)
+    #[bits(1)]
+    pub fe: bool, // [Bit 10] Fixed Range MTRR Enable (1 bit)
+    #[bits(1)]
+    pub e: bool, // [Bit 11] MTRR Enable (1 bit)
+    #[bits(52)]
+    pub reserved: u64, // [Bits 31:12] Reserved (20 bits)
 }
 
 // Structure to hold all MTRRs
@@ -227,10 +165,97 @@ impl MtrrMemoryRange {
     }
 }
 
+//
+// structs/definitions internal to the MTRR library
+//
+
+// Firmware needs to reserve 2 MTRRs for OS.
+// Note: It is replaced by PCD PcdCpuNumberOfReservedVariableMtrrs.
+// const RESERVED_FIRMWARE_VARIABLE_MTRR_NUMBER: usize = 2;
+
+pub(crate) const MSR_IA32_MTRRCAP: u32 = 0x000000FE; // Example MSR index for MSR_IA32_MTRRCAP
+pub(crate) const MSR_IA32_MTRR_DEF_TYPE: u32 = 0x000002FF;
+pub(crate) const MTRR_NUMBER_OF_VARIABLE_MTRR: usize = 32; // Adjust based on the actual number
+pub(crate) const MTRR_NUMBER_OF_FIXED_MTRR: usize = 11;
+pub(crate) const MTRR_NUMBER_OF_WORKING_MTRR_RANGES: usize = 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 2;
+pub(crate) const MTRR_NUMBER_OF_LOCAL_MTRR_RANGES: usize =
+    8 * MTRR_NUMBER_OF_FIXED_MTRR + 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 1;
+
+pub(crate) const SIZE_1MB: u32 = 0x000100000;
+pub(crate) const SIZE_64KB: u32 = 0x00010000;
+pub(crate) const SIZE_16KB: u32 = 0x00004000;
+pub(crate) const SIZE_4KB: u32 = 0x00001000;
+pub(crate) const OR_SEED: u64 = 0x0101010101010101;
+pub(crate) const CLEAR_SEED: u64 = 0xFFFFFFFFFFFFFFFF;
+pub(crate) const SCRATCH_BUFFER_SIZE: usize = 4 * SIZE_4KB as usize;
+
+// Fixed MTRR msr
+pub(crate) const MSR_IA32_MTRR_FIX64K_00000: u32 = 0x00000250;
+pub(crate) const MSR_IA32_MTRR_FIX16K_80000: u32 = 0x00000258;
+pub(crate) const MSR_IA32_MTRR_FIX16K_A0000: u32 = 0x00000259;
+pub(crate) const MSR_IA32_MTRR_FIX4K_C0000: u32 = 0x00000268;
+pub(crate) const MSR_IA32_MTRR_FIX4K_C8000: u32 = 0x00000269;
+pub(crate) const MSR_IA32_MTRR_FIX4K_D0000: u32 = 0x0000026A;
+pub(crate) const MSR_IA32_MTRR_FIX4K_D8000: u32 = 0x0000026B;
+pub(crate) const MSR_IA32_MTRR_FIX4K_E0000: u32 = 0x0000026C;
+pub(crate) const MSR_IA32_MTRR_FIX4K_E8000: u32 = 0x0000026D;
+pub(crate) const MSR_IA32_MTRR_FIX4K_F0000: u32 = 0x0000026E;
+pub(crate) const MSR_IA32_MTRR_FIX4K_F8000: u32 = 0x0000026F;
+
+// Table for fixed MTRRs
+pub(crate) const MMTRR_LIB_FIXED_MTRR_TABLE: [FixedMtrr; 11] = [
+    FixedMtrr { msr: MSR_IA32_MTRR_FIX64K_00000, base_address: 0, length: SIZE_64KB },
+    FixedMtrr { msr: MSR_IA32_MTRR_FIX16K_80000, base_address: 0x80000, length: SIZE_16KB },
+    FixedMtrr { msr: MSR_IA32_MTRR_FIX16K_A0000, base_address: 0xA0000, length: SIZE_16KB },
+    FixedMtrr { msr: MSR_IA32_MTRR_FIX4K_C0000, base_address: 0xC0000, length: SIZE_4KB },
+    FixedMtrr { msr: MSR_IA32_MTRR_FIX4K_C8000, base_address: 0xC8000, length: SIZE_4KB },
+    FixedMtrr { msr: MSR_IA32_MTRR_FIX4K_D0000, base_address: 0xD0000, length: SIZE_4KB },
+    FixedMtrr { msr: MSR_IA32_MTRR_FIX4K_D8000, base_address: 0xD8000, length: SIZE_4KB },
+    FixedMtrr { msr: MSR_IA32_MTRR_FIX4K_E0000, base_address: 0xE0000, length: SIZE_4KB },
+    FixedMtrr { msr: MSR_IA32_MTRR_FIX4K_E8000, base_address: 0xE8000, length: SIZE_4KB },
+    FixedMtrr { msr: MSR_IA32_MTRR_FIX4K_F0000, base_address: 0xF0000, length: SIZE_4KB },
+    FixedMtrr { msr: MSR_IA32_MTRR_FIX4K_F8000, base_address: 0xF8000, length: SIZE_4KB },
+];
+
+// Variable MTRR msr
+pub(crate) const MSR_IA32_MTRR_PHYSBASE0: u32 = 0x00000200;
+// pub(crate) const MSR_IA32_MTRR_PHYSBASE1: u32 = 0x00000202;
+// pub(crate) const MSR_IA32_MTRR_PHYSBASE2: u32 = 0x00000204;
+// pub(crate) const MSR_IA32_MTRR_PHYSBASE3: u32 = 0x00000206;
+// pub(crate) const MSR_IA32_MTRR_PHYSBASE4: u32 = 0x00000208;
+// pub(crate) const MSR_IA32_MTRR_PHYSBASE5: u32 = 0x0000020A;
+// pub(crate) const MSR_IA32_MTRR_PHYSBASE6: u32 = 0x0000020C;
+// pub(crate) const MSR_IA32_MTRR_PHYSBASE7: u32 = 0x0000020E;
+// pub(crate) const MSR_IA32_MTRR_PHYSBASE8: u32 = 0x00000210;
+// pub(crate) const MSR_IA32_MTRR_PHYSBASE9: u32 = 0x00000212;
+
+pub(crate) const MSR_IA32_MTRR_PHYSMASK0: u32 = 0x00000201;
+// pub(crate) const MSR_IA32_MTRR_PHYSMASK1: u32 = 0x00000203;
+// pub(crate) const MSR_IA32_MTRR_PHYSMASK2: u32 = 0x00000205;
+// pub(crate) const MSR_IA32_MTRR_PHYSMASK3: u32 = 0x00000207;
+// pub(crate) const MSR_IA32_MTRR_PHYSMASK4: u32 = 0x00000209;
+// pub(crate) const MSR_IA32_MTRR_PHYSMASK5: u32 = 0x0000020B;
+// pub(crate) const MSR_IA32_MTRR_PHYSMASK6: u32 = 0x0000020D;
+// pub(crate) const MSR_IA32_MTRR_PHYSMASK7: u32 = 0x0000020F;
+// pub(crate) const MSR_IA32_MTRR_PHYSMASK8: u32 = 0x00000211;
+// pub(crate) const MSR_IA32_MTRR_PHYSMASK9: u32 = 0x00000213;
+
+// Array of MTRR memory cache type short names
+pub(crate) const MMTRR_MEMORY_CACHE_TYPE_SHORT_NAME: [&str; 8] = [
+    "UC", // CacheUncacheable
+    "WC", // CacheWriteCombining
+    "R*", // Invalid
+    "R*", // Invalid
+    "WT", // CacheWriteThrough
+    "WP", // CacheWriteProtected
+    "WB", // CacheWriteBack
+    "R*", // Invalid
+];
+
 // Structure to save and restore MTRR context
 #[repr(C)]
 #[derive(Default)]
-pub struct MtrrContext {
+pub(crate) struct MtrrContext {
     pub cr4: u64,                     // UINTN in C corresponds to usize in Rust
     pub interrupt_state: bool,        // BOOLEAN in C becomes bool in Rust
     pub def_type: MsrIa32MtrrDefType, // Assume MsrIa32MtrrDefType is defined elsewhere
@@ -239,7 +264,7 @@ pub struct MtrrContext {
 // Structure for MTRR Lib Address
 #[repr(C)]
 #[derive(Default)]
-pub struct MtrrLibAddress {
+pub(crate) struct MtrrLibAddress {
     pub address: u64,
     pub alignment: u64,
     pub length: u64,
@@ -251,38 +276,17 @@ pub struct MtrrLibAddress {
     pub previous: u16, // UINT16
 }
 
-pub const BIT11: u64 = 0x800;
-pub const BIT7: u64 = 0x80;
-pub const CPUID_EXTENDED_FUNCTION: u32 = 0x80000000;
-pub const CPUID_SIGNATURE: u32 = 0;
-pub const CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS: u32 = 0x07;
-pub const CPUID_VERSION_INFO: u32 = 0x00000001;
-pub const CPUID_VIR_PHY_ADDRESS_SIZE: u32 = 0x80000008;
-pub const MSR_IA32_TME_ACTIVATE: u32 = 0x00000982;
-
-/**
-  MSR information returned for MSR index #MSR_IA32_MTRR_DEF_TYPE
-**/
-// translated from MSR_IA32_MTRR_DEF_TYPE_REGISTER in
-// MU_BASECORE\MdePkg\Include\Register\Intel\ArchitecturalMsr.h
+pub(crate) const BIT11: u64 = 0x800;
+pub(crate) const BIT7: u64 = 0x80;
+pub(crate) const CPUID_EXTENDED_FUNCTION: u32 = 0x80000000;
+pub(crate) const CPUID_SIGNATURE: u32 = 0;
+pub(crate) const CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS: u32 = 0x07;
+pub(crate) const CPUID_VERSION_INFO: u32 = 0x00000001;
+pub(crate) const CPUID_VIR_PHY_ADDRESS_SIZE: u32 = 0x80000008;
+pub(crate) const MSR_IA32_TME_ACTIVATE: u32 = 0x00000982;
 
 #[bitfield(u64)]
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
-pub struct MsrIa32MtrrDefType {
-    #[bits(3)]
-    pub mem_type: u8, // [Bits 2:0] Default Memory Type (3 bits)
-    #[bits(7)]
-    pub reserved1: u8, // [Bits 9:3] Reserved (7 bits)
-    #[bits(1)]
-    pub fe: bool, // [Bit 10] Fixed Range MTRR Enable (1 bit)
-    #[bits(1)]
-    pub e: bool, // [Bit 11] MTRR Enable (1 bit)
-    #[bits(52)]
-    pub reserved: u64, // [Bits 31:12] Reserved (20 bits)
-}
-
-#[bitfield(u64)]
-pub struct MsrIa32MtrrPhysbaseRegister {
+pub(crate) struct MsrIa32MtrrPhysbaseRegister {
     #[bits(8)]
     pub mem_type: u8, // [Bits 7:0] Type. Specifies memory type of the range.
     #[bits(4)]
@@ -294,7 +298,7 @@ pub struct MsrIa32MtrrPhysbaseRegister {
 }
 
 #[bitfield(u64)]
-pub struct MsrIa32MtrrPhysmaskRegister {
+pub(crate) struct MsrIa32MtrrPhysmaskRegister {
     #[bits(11)]
     pub reserved1: u16, //
     #[bits(1)]
@@ -313,7 +317,7 @@ pub struct MsrIa32MtrrPhysmaskRegister {
 // MU_BASECORE\MdePkg\Include\Register\Intel\Cpuid.h
 
 #[bitfield(u32)]
-pub struct CpuidVersionInfoEdx {
+pub(crate) struct CpuidVersionInfoEdx {
     #[bits(1)]
     pub fpu: bool, // [Bit 0] Floating Point Unit On-Chip
     #[bits(1)]
@@ -387,7 +391,7 @@ pub struct CpuidVersionInfoEdx {
 // MU_BASECORE\MdePkg\Include\Register\Intel\ArchitecturalMsr.h
 
 #[bitfield(u32)]
-pub struct MsrIa32MtrrcapRegister {
+pub(crate) struct MsrIa32MtrrcapRegister {
     #[bits(8)]
     pub vcnt: u8, // [Bits 7:0] VCNT: Number of variable memory type ranges
     #[bits(1)]
@@ -403,7 +407,7 @@ pub struct MsrIa32MtrrcapRegister {
 }
 
 #[bitfield(u32)]
-pub struct CpuidVirPhyAddressSizeEax {
+pub(crate) struct CpuidVirPhyAddressSizeEax {
     /// Number of physical address bits.
     #[bits(8)]
     pub physical_address_bits: u8,
@@ -418,7 +422,7 @@ pub struct CpuidVirPhyAddressSizeEax {
 }
 
 #[bitfield(u32)]
-pub struct CpuidStructuredExtendedFeatureFlagsEcx {
+pub(crate) struct CpuidStructuredExtendedFeatureFlagsEcx {
     /// [Bit 0] If 1 indicates the processor supports the PREFETCHWT1 instruction.
     #[bits(1)]
     pub prefetchwt1: bool,
@@ -481,7 +485,7 @@ pub struct CpuidStructuredExtendedFeatureFlagsEcx {
 }
 
 #[bitfield(u64)]
-pub struct MsrIa32TmeActivateRegister {
+pub(crate) struct MsrIa32TmeActivateRegister {
     /// [Bit 0] Lock R/O: Will be set upon successful WRMSR (or first SMI); written value ignored.
     #[bits(1)]
     pub lock: bool,

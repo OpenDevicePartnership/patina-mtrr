@@ -49,10 +49,10 @@ pub fn high_bit_set_64(operand: u64) -> i32 {
     if core::mem::size_of::<usize>() == core::mem::size_of::<u32>() {
         // 32-bit architecture
         let high_bits = ((operand >> 32) & u32::MAX as u64) as u32;
-        return high_bit_set_32(high_bits) + 32;
+        high_bit_set_32(high_bits) + 32
     } else {
         // 64-bit architecture
-        return high_bit_set_32((operand >> 32) as u32) + 32;
+        high_bit_set_32((operand >> 32) as u32) + 32
     }
 }
 

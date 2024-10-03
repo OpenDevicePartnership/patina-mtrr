@@ -1,3 +1,4 @@
+#![allow(clippy::needless_range_loop)]
 use core::mem::size_of;
 use core::ptr::write_bytes;
 
@@ -78,10 +79,8 @@ impl<H: HalTrait> MtrrLib<H> {
     //                number of variable MTRRs is 0.
     //
     fn mtrr_lib_is_mtrr_supported_internal(&self) -> MtrrResult<(bool, u32)> {
-        let edx: u32;
-
         // Check CPUID(1).EDX[12] for MTRR capability
-        edx = self.hal.asm_cpuid(CPUID_VERSION_INFO).edx;
+        let edx = self.hal.asm_cpuid(CPUID_VERSION_INFO).edx;
 
         let mtrr_supported = (edx & (1 << 12)) != 0;
 
@@ -285,7 +284,6 @@ impl<H: HalTrait> MtrrLib<H> {
         or_mask: &mut u64,
     ) -> MtrrResult<()> {
         let mut msr_index: u32 = last_msr_index.wrapping_add(1);
-        let left_byte_shift: u32;
         let right_byte_shift: u32;
         let mut sub_length: u64;
 
@@ -306,7 +304,7 @@ impl<H: HalTrait> MtrrLib<H> {
             return Err(MtrrError::FixedRangeMtrrBaseAddressNotAligned);
         }
 
-        left_byte_shift = ((*base - entry.base_address as u64) / entry.length as u64) as u32;
+        let left_byte_shift = ((*base - entry.base_address as u64) / entry.length as u64) as u32;
         assert!(left_byte_shift < 8);
 
         // Find the end offset in fixed MTRR and calculate byte offset of right shift
@@ -374,7 +372,7 @@ impl<H: HalTrait> MtrrLib<H> {
             if (mask >> 11) & 1 != 0 {
                 variable_mtrr_ranges[index].base_address = base & mtrr_valid_address_mask;
                 variable_mtrr_ranges[index].length = ((!(mask & mtrr_valid_address_mask)) & mtrr_valid_bits_mask) + 1;
-                variable_mtrr_ranges[index].mem_type = MtrrMemoryCacheType::from((base & 0x0ff) as u8).into();
+                variable_mtrr_ranges[index].mem_type = MtrrMemoryCacheType::from((base & 0x0ff) as u8);
                 used_mtrr += 1;
             }
         }
@@ -428,9 +426,6 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @param[out]  MtrrValidAddressMask  The valid address mask for the MTRR
     //
     fn mtrr_lib_initialize_mtrr_mask(&self) -> (u64, u64) {
-        let mtrr_valid_bits_mask;
-        let mtrr_valid_address_mask;
-
         let mut vir_phy_address_size = CpuidVirPhyAddressSizeEax::default();
 
         // Get maximum CPUID function number
@@ -466,8 +461,8 @@ impl<H: HalTrait> MtrrLib<H> {
             }
         }
 
-        mtrr_valid_bits_mask = (1u64 << vir_phy_address_size.physical_address_bits()) - 1;
-        mtrr_valid_address_mask = mtrr_valid_bits_mask & 0xfffffffffffff000u64;
+        let mtrr_valid_bits_mask = (1u64 << vir_phy_address_size.physical_address_bits()) - 1;
+        let mtrr_valid_address_mask = mtrr_valid_bits_mask & 0xfffffffffffff000u64;
 
         (mtrr_valid_bits_mask, mtrr_valid_address_mask)
     }
@@ -524,19 +519,17 @@ impl<H: HalTrait> MtrrLib<H> {
         }
 
         // If address is less than 1M, then try to go through the fixed MTRR
-        if address < SIZE_1MB as u64 {
-            if def_type.fe() {
-                for index in 0..MTRR_NUMBER_OF_FIXED_MTRR {
-                    if (address >= MMTRR_LIB_FIXED_MTRR_TABLE[index].base_address as u64)
-                        && (address
-                            < MMTRR_LIB_FIXED_MTRR_TABLE[index].base_address as u64
-                                + (MMTRR_LIB_FIXED_MTRR_TABLE[index].length as u64 * 8))
-                    {
-                        let sub_index = (address - MMTRR_LIB_FIXED_MTRR_TABLE[index].base_address as u64)
-                            / MMTRR_LIB_FIXED_MTRR_TABLE[index].length as u64;
-                        let fixed_mtrr = self.hal.asm_read_msr64(MMTRR_LIB_FIXED_MTRR_TABLE[index].msr);
-                        return (((fixed_mtrr >> (sub_index * 8)) & 0xFF) as u8).into();
-                    }
+        if address < SIZE_1MB as u64 && def_type.fe() {
+            for index in 0..MTRR_NUMBER_OF_FIXED_MTRR {
+                if (address >= MMTRR_LIB_FIXED_MTRR_TABLE[index].base_address as u64)
+                    && (address
+                        < MMTRR_LIB_FIXED_MTRR_TABLE[index].base_address as u64
+                            + (MMTRR_LIB_FIXED_MTRR_TABLE[index].length as u64 * 8))
+                {
+                    let sub_index = (address - MMTRR_LIB_FIXED_MTRR_TABLE[index].base_address as u64)
+                        / MMTRR_LIB_FIXED_MTRR_TABLE[index].length as u64;
+                    let fixed_mtrr = self.hal.asm_read_msr64(MMTRR_LIB_FIXED_MTRR_TABLE[index].msr);
+                    return (((fixed_mtrr >> (sub_index * 8)) & 0xFF) as u8).into();
                 }
             }
         }
@@ -558,13 +551,11 @@ impl<H: HalTrait> MtrrLib<H> {
         // Go through the variable MTRR
         let mut mem_type = MtrrMemoryCacheType::Invalid;
         for range in variable_mtrr_ranges.iter() {
-            if range.length != 0 {
-                if (address >= range.base_address) && (address < range.base_address + range.length) {
-                    if mem_type == MtrrMemoryCacheType::Invalid {
-                        mem_type = range.mem_type;
-                    } else {
-                        mem_type = self.mtrr_lib_precedence(mem_type, range.mem_type);
-                    }
+            if range.length != 0 && (address >= range.base_address) && (address < range.base_address + range.length) {
+                if mem_type == MtrrMemoryCacheType::Invalid {
+                    mem_type = range.mem_type;
+                } else {
+                    mem_type = self.mtrr_lib_precedence(mem_type, range.mem_type);
                 }
             }
         }
@@ -666,19 +657,18 @@ impl<H: HalTrait> MtrrLib<H> {
         // The type change may cause merging with previous range or next range.
         // Update the StartIndex, EndIndex, BaseAddress, Length so that following
         // logic doesn't need to consider merging.
-        if start_index != 0 {
-            if length_left == 0 && working_ranges[start_index - 1].mem_type == mem_type {
-                start_index -= 1;
-                length += working_ranges[start_index].length;
-                base_address -= working_ranges[start_index].length;
-            }
+        if start_index != 0 && length_left == 0 && working_ranges[start_index - 1].mem_type == mem_type {
+            start_index -= 1;
+            length += working_ranges[start_index].length;
+            base_address -= working_ranges[start_index].length;
         }
 
-        if end_index != *working_ranges_count - 1 {
-            if length_right == 0 && working_ranges[end_index + 1].mem_type == mem_type {
-                end_index += 1;
-                length += working_ranges[end_index].length;
-            }
+        if end_index != *working_ranges_count - 1
+            && length_right == 0
+            && working_ranges[end_index + 1].mem_type == mem_type
+        {
+            end_index += 1;
+            length += working_ranges[end_index].length;
         }
 
         // println!("start_index: {} end_index: {}", start_index, end_index);
@@ -699,12 +689,12 @@ impl<H: HalTrait> MtrrLib<H> {
         for i in (0..(*working_ranges_count - end_index - 1)).rev() {
             let src = i + end_index + 1;
             let dest = (i as i64 + end_index as i64 + 1 - delta_count) as usize;
-            working_ranges[dest] = working_ranges[src].clone();
+            working_ranges[dest] = working_ranges[src];
 
             // println!("src: {} dest: {} working_ranges_count: {}", src, dest, *working_ranges_count);
         }
 
-        *working_ranges_count = (*working_ranges_count as i64 - delta_count) as i64 as usize;
+        *working_ranges_count = (*working_ranges_count as i64 - delta_count) as usize;
         // println!("working_ranges_count: {} delta_count: {}", *working_ranges_count, delta_count);
         if length_left != 0 {
             working_ranges[start_index].length = length_left;
@@ -783,6 +773,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @param Stop            Stop vertex.
     //  @param IncludeOptional TRUE to count the optional weight.
     //
+    #[allow(clippy::too_many_arguments)]
     fn mtrr_lib_calculate_least_mtrrs(
         &self,
         vertex_count: u16,
@@ -920,10 +911,11 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @retval RETURN_SUCCESS          The subtractive path is calculated successfully.
     //  @retval RETURN_OUT_OF_RESOURCES The MTRR setting array is full.
     //
+    #[allow(clippy::too_many_arguments)]
     fn mtrr_lib_calculate_subtractive_path(
         &self,
         default_type: MtrrMemoryCacheType,
-        a0: u64,
+        _a0: u64,
         ranges: &[MtrrMemoryRange],
         range_count: usize,
         vertex_count: u16,
@@ -1030,17 +1022,14 @@ impl<H: HalTrait> MtrrLib<H> {
                         weight[m(start, stop, vertex_count)] += (sub_stop - sub_start) as u8;
                     } else {
                         while sub_start != sub_stop {
-                            let status = self.mtrr_lib_append_variable_mtrr(
+                            self.mtrr_lib_append_variable_mtrr(
                                 mtrrs_unwrap,
-                                mtrr_capacity.unwrap() as usize,
+                                mtrr_capacity.unwrap(),
                                 mtrr_count_unwrap,
                                 vertices[sub_start as usize].address,
                                 vertices[sub_start as usize].length,
                                 vertices[sub_start as usize].mem_type.into(),
-                            );
-                            if status.is_err() {
-                                return status;
-                            }
+                            )?;
                             sub_start += 1;
                         }
                     }
@@ -1058,7 +1047,7 @@ impl<H: HalTrait> MtrrLib<H> {
                             sub_stop = pre;
 
                             if weight[m(pre, cur, vertex_count)] + weight[o(pre, cur, vertex_count)] != 0 {
-                                let status = self.mtrr_lib_append_variable_mtrr(
+                                self.mtrr_lib_append_variable_mtrr(
                                     mtrrs_unwrap,
                                     mtrr_capacity.unwrap(),
                                     mtrr_count_unwrap,
@@ -1069,16 +1058,13 @@ impl<H: HalTrait> MtrrLib<H> {
                                     } else {
                                         vertices[pre as usize].mem_type.into()
                                     },
-                                );
-                                if status.is_err() {
-                                    return status;
-                                }
+                                )?;
                             }
 
                             if pre != cur - 1 {
-                                let status = self.mtrr_lib_calculate_subtractive_path(
+                                self.mtrr_lib_calculate_subtractive_path(
                                     default_type,
-                                    a0,
+                                    _a0,
                                     ranges,
                                     range_count,
                                     vertex_count,
@@ -1091,10 +1077,7 @@ impl<H: HalTrait> MtrrLib<H> {
                                     Some(mtrrs_unwrap),
                                     mtrr_capacity,
                                     Some(mtrr_count_unwrap),
-                                );
-                                if status.is_err() {
-                                    return status;
-                                }
+                                )?;
                             }
                         }
                     }
@@ -1130,6 +1113,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @retval RETURN_OUT_OF_RESOURCES Count of variable MTRRs exceeds capacity.
     //  @retval RETURN_BUFFER_TOO_SMALL The scratch buffer is too small for MTRR calculation.
     //
+    #[allow(clippy::too_many_arguments)]
     fn mtrr_lib_calculate_mtrrs(
         &self,
         default_type: MtrrMemoryCacheType,
@@ -1164,7 +1148,7 @@ impl<H: HalTrait> MtrrLib<H> {
         assert!(base0 & !((base1 - base0) - 1) == base0);
 
         // Counting the number of vertices
-        let mut vertices: &mut [MtrrLibAddress] = unsafe {
+        let vertices: &mut [MtrrLibAddress] = unsafe {
             core::slice::from_raw_parts_mut(
                 scratch.as_mut_ptr() as *mut MtrrLibAddress,
                 scratch.len() / size_of::<MtrrLibAddress>(),
@@ -1250,7 +1234,7 @@ impl<H: HalTrait> MtrrLib<H> {
 
         let weight: &mut [u8] = unsafe {
             core::slice::from_raw_parts_mut(
-                vertices.as_mut_ptr().offset(vertex_count as isize) as *mut u8,
+                vertices.as_mut_ptr().add(vertex_count) as *mut u8,
                 vertex_count * vertex_count + 1,
             )
         };
@@ -1332,7 +1316,7 @@ impl<H: HalTrait> MtrrLib<H> {
 
         self.mtrr_lib_calculate_least_mtrrs(
             vertex_count as u16,
-            &mut vertices,
+            vertices,
             weight,
             0,
             vertex_count as u16 - 1,
@@ -1353,17 +1337,14 @@ impl<H: HalTrait> MtrrLib<H> {
                     vertices[stop as usize].address - vertices[start as usize].address,
                     Some(&mut mem_type),
                 );
-                let status = self.mtrr_lib_append_variable_mtrr(
+                self.mtrr_lib_append_variable_mtrr(
                     mtrrs,
                     mtrr_capacity,
                     mtrr_count,
                     vertices[start as usize].address,
                     vertices[stop as usize].address - vertices[start as usize].address,
                     Self::mtrr_lib_lowest_type(mem_type),
-                );
-                if status.is_err() {
-                    break;
-                }
+                )?;
             }
 
             if start != stop - 1 {
@@ -1384,14 +1365,14 @@ impl<H: HalTrait> MtrrLib<H> {
                     ranges,
                     range_count,
                     vertex_count as u16,
-                    &mut vertices,
+                    vertices,
                     weight,
                     start,
                     stop,
                     mem_type,
                     type_count,
                     Some(mtrrs),
-                    Some(mtrr_capacity as usize),
+                    Some(mtrr_capacity),
                     Some(mtrr_count),
                 );
                 if status.is_err() {
@@ -1454,8 +1435,8 @@ impl<H: HalTrait> MtrrLib<H> {
                     memory_type,
                 );
 
-                if status.is_err() {
-                    if let MtrrError::ReturnOutOfResources = status.unwrap_err() {
+                if let Err(status) = status {
+                    if status == MtrrError::ReturnOutOfResources {
                         return Err(MtrrError::ReturnOutOfResources);
                     }
                 }
@@ -1500,17 +1481,14 @@ impl<H: HalTrait> MtrrLib<H> {
             //     range.mem_type
             // );
             if range.length != 0 && range.mem_type == MtrrMemoryCacheType::WriteBack {
-                let status = self.mtrr_lib_set_memory_type(
+                self.mtrr_lib_set_memory_type(
                     working_ranges,
                     working_ranges_capacity,
                     working_ranges_count,
                     range.base_address,
                     range.length,
                     range.mem_type,
-                );
-                if status.is_err() {
-                    return status;
-                }
+                )?;
 
                 // for index2 in 0..*working_ranges_count {
                 //     println!(
@@ -1545,17 +1523,14 @@ impl<H: HalTrait> MtrrLib<H> {
                 && range.mem_type != MtrrMemoryCacheType::WriteBack
                 && range.mem_type != MtrrMemoryCacheType::Uncacheable
             {
-                let status = self.mtrr_lib_set_memory_type(
+                self.mtrr_lib_set_memory_type(
                     working_ranges,
                     working_ranges_capacity,
                     working_ranges_count,
                     range.base_address,
                     range.length,
                     range.mem_type,
-                );
-                if status.is_err() {
-                    return status;
-                }
+                )?;
 
                 // for index2 in 0..*working_ranges_count {
                 //     println!(
@@ -1580,17 +1555,14 @@ impl<H: HalTrait> MtrrLib<H> {
             //     range.mem_type
             // );
             if range.length != 0 && range.mem_type == MtrrMemoryCacheType::Uncacheable {
-                let status = self.mtrr_lib_set_memory_type(
+                self.mtrr_lib_set_memory_type(
                     working_ranges,
                     working_ranges_capacity,
                     working_ranges_count,
                     range.base_address,
                     range.length,
                     range.mem_type,
-                );
-                if status.is_err() {
-                    return status;
-                }
+                )?;
                 // for index2 in 0..*working_ranges_count {
                 //     println!(
                 //         "   SET 3  working_ranges[{}] = {:x} - {:x} mem_type: {:?}",
@@ -1646,7 +1618,7 @@ impl<H: HalTrait> MtrrLib<H> {
                     i += 1;
                 }
 
-                MtrrMemoryCacheType::Invalid | _ => {
+                _ => {
                     panic!("Invalid cache type");
                 }
             }
@@ -1719,7 +1691,7 @@ impl<H: HalTrait> MtrrLib<H> {
                 }
 
                 assert!(dst_index < dst_mtrr_count);
-                dst_mtrrs[dst_index] = src_mtrrs[src_index].clone();
+                dst_mtrrs[dst_index] = src_mtrrs[src_index];
                 modified[dst_index] = true;
             }
         }
@@ -1744,6 +1716,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @retval RETURN_BUFFER_TOO_SMALL The scratch buffer is too small for MTRR calculation.
     //                                  The required scratch buffer size is returned through ScratchSize.
     //
+    #[allow(clippy::too_many_arguments)]
     fn mtrr_lib_set_memory_ranges(
         &mut self,
         default_type: MtrrMemoryCacheType, // Assuming MTRR_MEMORY_CACHE_TYPE is an 8-bit enum
@@ -1780,18 +1753,14 @@ impl<H: HalTrait> MtrrLib<H> {
                 println!("####### Base0: {:x} Alignment: {:x}", base0, alignment);
                 while base0 + alignment <= working_ranges[index].base_address + working_ranges[index].length {
                     if biggest_scratch_size <= *scratch_size && working_ranges[index].mem_type != default_type {
-                        let status = self.mtrr_lib_append_variable_mtrr(
+                        self.mtrr_lib_append_variable_mtrr(
                             variable_mtrr_ranges,
                             variable_mtrr_capacity,
                             variable_mtrr_ranges_count,
                             base0,
                             alignment,
                             working_ranges[index].mem_type,
-                        );
-                        println!(" status: {:?}", status);
-                        if status.is_err() {
-                            return status;
-                        }
+                        )?;
                     }
 
                     base0 += alignment;
@@ -1861,9 +1830,7 @@ impl<H: HalTrait> MtrrLib<H> {
                 status = Ok(());
             }
 
-            if status.is_err() {
-                return status;
-            }
+            status?;
 
             if length != working_ranges[end].length {
                 working_ranges[end].base_address = base1;
@@ -1912,18 +1879,14 @@ impl<H: HalTrait> MtrrLib<H> {
         msr_index = u32::MAX;
 
         while base_address < SIZE_1MB as u64 && length != 0 {
-            let status = Self::mtrr_lib_program_fixed_mtrr(
+            Self::mtrr_lib_program_fixed_mtrr(
                 mem_type as u8,
                 &mut base_address,
                 &mut length,
                 &mut msr_index,
                 &mut clear_mask,
                 &mut or_mask,
-            );
-
-            if status.is_err() {
-                return status;
-            }
+            )?;
 
             clear_masks[msr_index as usize] |= clear_mask;
             or_masks[msr_index as usize] = (or_masks[msr_index as usize] & !clear_mask) | or_mask;
@@ -1958,6 +1921,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //                                    BaseAddress and Length cannot be modified.
     //  @retval RETURN_BUFFER_TOO_SMALL   The scratch buffer is too small for MTRR calculation.
     //
+    #[allow(clippy::mut_range_bound)]
     fn mtrr_set_memory_attributes_internal(
         &mut self,
         scratch: &mut [u8],
@@ -1981,7 +1945,6 @@ impl<H: HalTrait> MtrrLib<H> {
         let mut working_variable_mtrr_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_VARIABLE_MTRR] = Default::default();
         let mut variable_setting_modified: [bool; MTRR_NUMBER_OF_VARIABLE_MTRR] = [false; MTRR_NUMBER_OF_VARIABLE_MTRR];
 
-        let fixed_mtrr_memory_limit: u64;
         let mut clear_masks: [u64; 11] = [0; 11];
         let mut or_masks: [u64; 11] = [0; 11];
 
@@ -2017,7 +1980,7 @@ impl<H: HalTrait> MtrrLib<H> {
             return Err(MtrrError::ReturnUnsupported);
         };
 
-        fixed_mtrr_memory_limit = if fixed_mtrr_supported { SIZE_1MB as u64 } else { 0 };
+        let fixed_mtrr_memory_limit = if fixed_mtrr_supported { SIZE_1MB as u64 } else { 0 };
 
         for index in 0..range_count {
             if ranges[index].length == 0 {
@@ -2065,17 +2028,13 @@ impl<H: HalTrait> MtrrLib<H> {
             working_ranges[0].length = mtrr_valid_bits_mask + 1;
             working_ranges[0].mem_type = default_type;
 
-            status = self.mtrr_lib_apply_variable_mtrrs(
+            self.mtrr_lib_apply_variable_mtrrs(
                 &original_variable_mtrr_ranges,
                 original_variable_mtrr_ranges_count,
                 &mut working_ranges,
                 MTRR_NUMBER_OF_WORKING_MTRR_RANGES,
                 &mut working_range_count,
-            );
-
-            if status.is_err() {
-                return status;
-            }
+            )?;
 
             println!("mtrr_lib_apply_variable_mtrrs Working range count: {}", working_range_count);
             for index in 0..working_range_count {
@@ -2138,9 +2097,6 @@ impl<H: HalTrait> MtrrLib<H> {
                 } else if status.is_err() {
                     return status;
                 } else {
-                    if status.is_err() {
-                        return status;
-                    }
                     modified = true;
                 }
             }
@@ -2164,7 +2120,7 @@ impl<H: HalTrait> MtrrLib<H> {
                 println!("high_bit_set_64(mtrr_valid_bits_mask) = {}", high_bit_set_64(mtrr_valid_bits_mask));
                 println!("a0: {:016x} ", 1u64 << high_bit_set_64(mtrr_valid_bits_mask));
                 println!("Step 2.4");
-                status = self.mtrr_lib_set_memory_ranges(
+                self.mtrr_lib_set_memory_ranges(
                     default_type,
                     1 << high_bit_set_64(mtrr_valid_bits_mask),
                     &mut working_ranges,
@@ -2174,13 +2130,10 @@ impl<H: HalTrait> MtrrLib<H> {
                     &mut working_variable_mtrr_ranges,
                     (firmware_variable_mtrr_count + 1) as usize,
                     &mut working_variable_mtrr_ranges_count,
-                );
-                if status.is_err() {
-                    return status;
-                }
+                )?;
 
                 // 2.5. Remove the [0, 1MB) MTRR if it still exists (not merged with other range)
-                for index in 0..working_variable_mtrr_ranges_count as usize {
+                for index in 0..working_variable_mtrr_ranges_count {
                     if working_variable_mtrr_ranges[index].base_address == 0
                         && working_variable_mtrr_ranges[index].length == fixed_mtrr_memory_limit
                     {
@@ -2189,7 +2142,7 @@ impl<H: HalTrait> MtrrLib<H> {
 
                         for i in 0..(working_variable_mtrr_ranges_count - index) {
                             working_variable_mtrr_ranges[i + index] =
-                                working_variable_mtrr_ranges[i + index + 1].clone();
+                                working_variable_mtrr_ranges[i + index + 1];
                         }
 
                         break;
@@ -2222,16 +2175,13 @@ impl<H: HalTrait> MtrrLib<H> {
                 continue;
             }
 
-            status = Self::mtrr_lib_set_below_1mb_memory_attribute(
+            Self::mtrr_lib_set_below_1mb_memory_attribute(
                 &mut clear_masks,
                 &mut or_masks,
                 ranges[index].base_address,
                 ranges[index].length,
                 ranges[index].mem_type,
-            );
-            if status.is_err() {
-                return status;
-            }
+            )?;
         }
 
         // 4. Write fixed MTRRs that have been modified
@@ -2415,7 +2365,7 @@ impl<H: HalTrait> MtrrLib<H> {
         // Assert that enabling the Fixed MTRR bit when unsupported is not allowed
         assert!(fixed_mtrr_supported || !mtrr_def_type.fe());
 
-        mtrr_setting.mtrr_def_type_reg = mtrr_def_type.into();
+        mtrr_setting.mtrr_def_type_reg = mtrr_def_type;
 
         // Get fixed MTRRs if supported
         if mtrr_def_type.fe() {
@@ -2463,7 +2413,7 @@ impl<H: HalTrait> MtrrLib<H> {
         self.hal.asm_write_msr64(MSR_IA32_MTRR_DEF_TYPE, mtrr_setting.mtrr_def_type_reg.into_bits());
 
         // Finalize MTRR change and enable cache
-        self.mtrr_lib_post_mtrr_change_enable_cache(&mut mtrr_context);
+        self.mtrr_lib_post_mtrr_change_enable_cache(&mtrr_context);
     }
 
     //
@@ -2492,8 +2442,6 @@ impl<H: HalTrait> MtrrLib<H> {
     //  @retval RETURN_SUCCESS           Ranges are successfully returned.
     //
     pub fn mtrr_get_memory_ranges(&self) -> MtrrResult<Vec<MtrrMemoryRange>> {
-        // Define the local structures and variables
-        let mtrrs: MtrrSettings;
         let mut raw_variable_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_VARIABLE_MTRR] = Default::default();
         let mut all_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_LOCAL_MTRR_RANGES] =
             [MtrrMemoryRange::default(); MTRR_NUMBER_OF_LOCAL_MTRR_RANGES];
@@ -2501,7 +2449,7 @@ impl<H: HalTrait> MtrrLib<H> {
         let mut all_range_count = 1;
 
         // Determine the MTRR settings to use
-        mtrrs = self.mtrr_get_all_mtrrs();
+        let mtrrs = self.mtrr_get_all_mtrrs();
 
         // Initialize the MTRR masks
         let (mtrr_valid_bits_mask, mtrr_valid_address_mask) = self.mtrr_lib_initialize_mtrr_mask();
@@ -2509,9 +2457,7 @@ impl<H: HalTrait> MtrrLib<H> {
         // Start with the one big range[0, mtrr_valid_bits_mask] and the default memory type
         all_ranges[0] = MtrrMemoryRange { base_address: 0, length: mtrr_valid_bits_mask + 1, ..Default::default() };
 
-        let mtrr_def_type = MsrIa32MtrrDefType::from(mtrrs.mtrr_def_type_reg);
-
-        if !mtrr_def_type.e() {
+        if !mtrrs.mtrr_def_type_reg.e() {
             all_ranges[0].mem_type = MtrrMemoryCacheType::Uncacheable;
         } else {
             all_ranges[0].mem_type = self.mtrr_get_default_memory_type();
@@ -2527,19 +2473,15 @@ impl<H: HalTrait> MtrrLib<H> {
                 &mut raw_variable_ranges,
             );
 
-            let status = self.mtrr_lib_apply_variable_mtrrs(
+            self.mtrr_lib_apply_variable_mtrrs(
                 &raw_variable_ranges,
                 variable_mtrr_ranges_count,
                 &mut all_ranges,
                 MTRR_NUMBER_OF_LOCAL_MTRR_RANGES,
                 &mut all_range_count,
-            );
+            )?;
 
-            if status.is_err() {
-                return Err(status.unwrap_err());
-            }
-
-            if mtrr_def_type.fe() {
+            if mtrrs.mtrr_def_type_reg.fe() {
                 let _ = self.mtrr_lib_apply_fixed_mtrrs(
                     &mtrrs.fixed,
                     &mut all_ranges,
@@ -2563,11 +2505,10 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     pub fn mtrr_debug_print_all_mtrrs(&self) {
         // Initialize local variables
-        let mtrrs: MtrrSettings;
         let mut contain_variable_mtrr = false;
 
         // Determine which MTRR settings to use
-        mtrrs = self.mtrr_get_all_mtrrs();
+        let mtrrs = self.mtrr_get_all_mtrrs();
 
         let Ok(ranges) = self.mtrr_get_memory_ranges() else {
             return;
