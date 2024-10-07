@@ -1,8 +1,15 @@
 # Introduction
 
-MTRR(Memory Type Range Registers) is described in 7.7 Vol 2 of AMD64
-Architecture Programmer's Manual and 12.11 Vol 3A of Intel Software Developers
-Manual
+MTRR(Memory Type Range Registers) Lib helps program MTRRs on x86_64
+architecture.
+
+MTRR is a set of processor MSRs that store memory type information used to
+control memory caching policies. MTRRs are used to specify the memory type
+for a range of physical memory addresses. The memory type determines whether
+the processor caches reads and writes to that range of memory and whether
+the memory is write-back or write-through etc. MTRRs are described in 7.7
+Vol 2 of AMD64 Architecture Programmer's Manual and 12.11 Vol 3A of Intel
+Software Developers Manual
 
 # Getting Started
 
