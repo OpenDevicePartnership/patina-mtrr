@@ -1,4 +1,3 @@
-
 use bitfield_struct::bitfield;
 
 //
@@ -74,7 +73,11 @@ pub struct MtrrSettings {
 }
 
 impl MtrrSettings {
-    pub fn new(fixed: MtrrFixedSettings, variables: MtrrVariableSettings, mtrr_def_type_reg: MsrIa32MtrrDefType) -> Self {
+    pub fn new(
+        fixed: MtrrFixedSettings,
+        variables: MtrrVariableSettings,
+        mtrr_def_type_reg: MsrIa32MtrrDefType,
+    ) -> Self {
         Self { fixed, variables, mtrr_def_type_reg }
     }
 }

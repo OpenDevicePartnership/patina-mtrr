@@ -575,7 +575,6 @@ pub fn get_effective_memory_ranges(
     // { 0x000001dcdfa58000, 0x0000000000001000, Uncacheable },
     // { 0x000001dcdfa59000, 0x00000023205a7000, WriteBack },
 
-
     let all_endpoints_count = raw_memory_range_count << 1;
     let mut all_endpoints_inclusive: Vec<u64> = Vec::with_capacity(all_endpoints_count);
     all_endpoints_inclusive.resize(all_endpoints_count, 0);
@@ -626,11 +625,7 @@ pub fn get_effective_memory_ranges(
                     all_endpoints_inclusive[index + 1] - (all_endpoints_inclusive[index] + 1) + 1;
                 output_ranges_count += 1;
 
-                if !is_endpoint_in_ranges(
-                    all_endpoints_inclusive[index],
-                    &output_ranges,
-                    output_ranges_count,
-                ) {
+                if !is_endpoint_in_ranges(all_endpoints_inclusive[index], &output_ranges, output_ranges_count) {
                     output_ranges[output_ranges_count].base_address = all_endpoints_inclusive[index];
                     output_ranges[output_ranges_count].length = 1;
                     output_ranges_count += 1;
@@ -653,11 +648,7 @@ pub fn get_effective_memory_ranges(
                 }
                 output_ranges_count += 1;
 
-                if !is_endpoint_in_ranges(
-                    all_endpoints_inclusive[index],
-                    &output_ranges,
-                    output_ranges_count,
-                ) {
+                if !is_endpoint_in_ranges(all_endpoints_inclusive[index], &output_ranges, output_ranges_count) {
                     output_ranges[output_ranges_count].base_address = all_endpoints_inclusive[index];
                     output_ranges[output_ranges_count].length = 1;
                     output_ranges_count += 1;
