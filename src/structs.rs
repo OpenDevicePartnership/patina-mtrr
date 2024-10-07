@@ -82,46 +82,6 @@ impl MtrrSettings {
     }
 }
 
-// // Implement Display for MtrrVariableSetting
-// impl fmt::Display for MtrrVariableSetting {
-//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//         write!(f, "Base: {:#018x}, Mask: {:#018x}", self.base, self.mask)
-//     }
-// }
-
-// // Implement Display for MtrrVariableSettings
-// impl fmt::Display for MtrrVariableSettings {
-//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//         let mut result = String::new();
-//         for (i, mtrr) in self.mtrr.iter().enumerate() {
-//             result.push_str(&format!("Variable MTRR[{}]: {}\n", i, mtrr));
-//         }
-//         write!(f, "{}", result)
-//     }
-// }
-
-// // Implement Display for MtrrFixedSettings
-// impl fmt::Display for MtrrFixedSettings {
-//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//         let mut result = String::new();
-//         for (i, mtrr) in self.mtrr.iter().enumerate() {
-//             result.push_str(&format!("Fixed MTRR[{}]: {:#018x}\n", i, mtrr));
-//         }
-//         write!(f, "{}", result)
-//     }
-// }
-
-// // Implement Display for MtrrSettings
-// impl fmt::Display for MtrrSettings {
-//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//         write!(
-//             f,
-//             "MTRR Settings:\nFixed MTRRs:\n{}\nVariable MTRRs:\n{}\nMTRR Default Type: {:#018x}",
-//             self.fixed, self.variables, self.mtrr_def_type_reg.into_bits()
-//         )
-//     }
-// }
-
 #[repr(u8)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum MtrrMemoryCacheType {

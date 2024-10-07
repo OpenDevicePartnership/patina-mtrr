@@ -15,7 +15,7 @@ Software Developers Manual
 
 ## Public API:
 ```rust
-pub fn create_mtrr_lib() -> MtrrLib;
+pub fn create_mtrr_lib(pcd_cpu_number_of_reserved_variable_mtrrs: u32) -> MtrrLib;
 
 pub fn is_mtrr_supported(&self) -> bool;
 
@@ -48,7 +48,7 @@ pub fn mtrr_debug_print_all_mtrrs(&self);
 ```rust
 fn mtrr_lib_usage() {
     // Create MTRR library
-    let mut mtrrlib = create_mtrr_lib();
+    let mut mtrrlib = create_mtrr_lib(0);
 
     // Get the current MTRR settings
     let mut mtrr_settings = mtrrlib.mtrr_get_all_mtrrs();
@@ -61,7 +61,6 @@ fn mtrr_lib_usage() {
 
     // Set the MTRR settings
     mtrrlib.mtrr_set_all_mtrrs(&mtrr_settings);
-
 
     const BASE_128KB: u64 = 0x00020000;
     const BASE_512KB: u64 = 0x00080000;

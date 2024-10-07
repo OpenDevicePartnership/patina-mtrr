@@ -22,7 +22,6 @@ pub trait HalTrait {
     fn asm_msr_and_then_or_64(&mut self, index: u32, and_data: u64, or_data: u64) -> u64;
     fn asm_cpuid(&self, function: u32) -> CpuidResult;
     fn asm_cpuid_ex(&self, function: u32, sub_function: u32) -> CpuidResult;
-    fn get_pcd_cpu_number_of_reserved_variable_mtrrs(&self) -> u32;
 }
 
 pub struct Hal;
@@ -192,10 +191,5 @@ impl HalTrait for Hal {
 
     fn asm_cpuid_ex(&self, function: u32, sub_function: u32) -> CpuidResult {
         unsafe { __cpuid_count(function, sub_function) }
-    }
-
-    fn get_pcd_cpu_number_of_reserved_variable_mtrrs(&self) -> u32 {
-        // This is a placeholder value
-        0 // Example reserved MTRR number
     }
 }

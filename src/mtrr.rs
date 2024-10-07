@@ -14,7 +14,7 @@
 //!
 //! ## Public API:
 //! ```ignore
-//! pub fn create_mtrr_lib() -> MtrrLib;
+//! pub fn create_mtrr_lib(pcd_cpu_number_of_reserved_variable_mtrrs: u32) -> MtrrLib;
 //!
 //! pub fn is_mtrr_supported(&self) -> bool;
 //!
@@ -47,7 +47,7 @@
 //! ```ignore
 //! fn mtrr_lib_usage() {
 //!     // Create MTRR library
-//!     let mut mtrrlib = create_mtrr_lib();
+//!     let mut mtrrlib = create_mtrr_lib(0);
 //!
 //!     // Get the current MTRR settings
 //!     let mut mtrr_settings = mtrrlib.mtrr_get_all_mtrrs();
@@ -60,7 +60,6 @@
 //!
 //!     // Set the MTRR settings
 //!     mtrrlib.mtrr_set_all_mtrrs(&mtrr_settings);
-//!
 //!
 //!     const BASE_128KB: u64 = 0x00020000;
 //!     const BASE_512KB: u64 = 0x00080000;
@@ -111,6 +110,8 @@
 //!
 //! ```
 
+// Below clippy override is enforced to match the Rust code with the C MtrrLib
+// implementation
 #![allow(clippy::needless_range_loop)]
 use crate::error::MtrrError;
 use crate::error::MtrrResult;
@@ -172,11 +173,12 @@ fn o(start: u16, index: u16, vertex_count: u16) -> usize {
 
 pub struct MtrrLib<H: HalTrait = Hal> {
     hal: H,
+    pcd_cpu_number_of_reserved_variable_mtrrs: u32,
 }
 
 impl<H: HalTrait> MtrrLib<H> {
-    pub(crate) fn new(hal: H) -> Self {
-        Self { hal }
+    pub(crate) fn new(hal: H, pcd_cpu_number_of_reserved_variable_mtrrs: u32) -> Self {
+        Self { hal, pcd_cpu_number_of_reserved_variable_mtrrs }
     }
 
     //
@@ -1965,10 +1967,10 @@ impl<H: HalTrait> MtrrLib<H> {
                 &mut working_range_count,
             )?;
 
-            assert!(original_variable_mtrr_ranges_count >= self.hal.get_pcd_cpu_number_of_reserved_variable_mtrrs());
+            assert!(original_variable_mtrr_ranges_count >= self.pcd_cpu_number_of_reserved_variable_mtrrs);
 
             firmware_variable_mtrr_count =
-                original_variable_mtrr_ranges_count - self.hal.get_pcd_cpu_number_of_reserved_variable_mtrrs();
+                original_variable_mtrr_ranges_count - self.pcd_cpu_number_of_reserved_variable_mtrrs;
             assert!(working_range_count <= 2 * firmware_variable_mtrr_count as usize + 1);
 
             // 2.2. Force [0, 1M) to UC, so that it doesn't impact subtraction algorithm.
@@ -2458,7 +2460,7 @@ impl<H: HalTrait> MtrrLib<H> {
 
         // Assuming the existence of these functions
         let variable_mtrr_ranges_count = self.get_variable_mtrr_count();
-        let reserved_mtrr_number = self.hal.get_pcd_cpu_number_of_reserved_variable_mtrrs();
+        let reserved_mtrr_number = self.pcd_cpu_number_of_reserved_variable_mtrrs;
 
         if variable_mtrr_ranges_count < reserved_mtrr_number {
             return 0;
@@ -2528,7 +2530,7 @@ impl<H: HalTrait> MtrrLib<H> {
 /// MTRR library constructor.
 /// This function creates a new MTRR library instance.
 ///
-pub fn create_mtrr_lib() -> MtrrLib {
+pub fn create_mtrr_lib(pcd_cpu_number_of_reserved_variable_mtrrs: u32) -> MtrrLib {
     let hal = Hal::new();
-    MtrrLib::new(hal)
+    MtrrLib::new(hal, pcd_cpu_number_of_reserved_variable_mtrrs)
 }

@@ -44,7 +44,6 @@ pub struct MockHal {
     interrupt_state: bool,
     cr3: u64,
     cr4: u64,
-    pcd_cpu_number_of_reserved_variable_mtrrs: u32,
 }
 
 impl MockHal {
@@ -62,7 +61,6 @@ impl MockHal {
             interrupt_state: true,
             cr3: 0,
             cr4: 0,
-            pcd_cpu_number_of_reserved_variable_mtrrs: 0,
         }
     }
 
@@ -93,10 +91,6 @@ impl MockHal {
             self.tme_activate_msr.set_tme_enable(false);
             self.tme_activate_msr.set_mk_tme_keyid_bits(0);
         }
-    }
-
-    pub fn set_pcd_cpu_number_of_reserved_variable_mtrrs(&mut self, count: u32) {
-        self.pcd_cpu_number_of_reserved_variable_mtrrs = count;
     }
 }
 
@@ -276,13 +270,9 @@ impl HalTrait for MockHal {
             }
         }
     }
-
-    fn get_pcd_cpu_number_of_reserved_variable_mtrrs(&self) -> u32 {
-        self.pcd_cpu_number_of_reserved_variable_mtrrs
-    }
 }
 
-pub fn create_mtrr_lib_with_mock_hal(hal: MockHal) -> MtrrLib<MockHal> {
-    let mtrr_lib = MtrrLib::new(hal);
+pub fn create_mtrr_lib_with_mock_hal(hal: MockHal, pcd_cpu_number_of_reserved_variable_mtrrs: u32) -> MtrrLib<MockHal> {
+    let mtrr_lib = MtrrLib::new(hal, pcd_cpu_number_of_reserved_variable_mtrrs);
     mtrr_lib
 }
