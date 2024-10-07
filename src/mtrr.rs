@@ -1,3 +1,116 @@
+//! # Introduction
+//! MTRR(Memory Type Range Registers) Lib helps program MTRRs on x86_64
+//! architecture.
+//!
+//! MTRR is a set of processor MSRs that store memory type information used to
+//! control memory caching policies. MTRRs are used to specify the memory type
+//! for a range of physical memory addresses. The memory type determines whether
+//! the processor caches reads and writes to that range of memory and whether
+//! the memory is write-back or write-through etc. MTRRs are described in 7.7
+//! Vol 2 of AMD64 Architecture Programmer's Manual and 12.11 Vol 3A of Intel
+//! Software Developers Manual
+//!
+//! # Getting Started
+//!
+//! ## Public API:
+//! ```ignore
+//! pub fn create_mtrr_lib() -> MtrrLib;
+//!
+//! pub fn is_mtrr_supported(&self) -> bool;
+//!
+//! pub fn mtrr_get_all_mtrrs(&self) -> MtrrSettings;
+//!
+//! pub fn mtrr_set_all_mtrrs(&mut self, mtrr_setting: &MtrrSettings);
+//!
+//! pub fn mtrr_get_memory_attribute(&self, address: u64) -> MtrrMemoryCacheType;
+//!
+//! pub fn mtrr_set_memory_attribute(
+//!     &mut self,
+//!     base_address: u64,
+//!     length: u64,
+//!     attribute: MtrrMemoryCacheType,
+//! ) -> MtrrResult<()>;
+//!
+//! pub fn mtrr_set_memory_attributes(
+//!     &mut self,
+//!     ranges: &[MtrrMemoryRange],
+//! ) -> MtrrResult<()>;
+//!
+//! pub fn mtrr_get_memory_ranges(
+//!     &self
+//! ) -> MtrrResult<Vec<MtrrMemoryRange>>;
+//!
+//! pub fn mtrr_debug_print_all_mtrrs(&self);
+//! ```
+//!
+//! ## API usage:
+//! ```ignore
+//! fn mtrr_lib_usage() {
+//!     // Create MTRR library
+//!     let mut mtrrlib = create_mtrr_lib();
+//!
+//!     // Get the current MTRR settings
+//!     let mut mtrr_settings = mtrrlib.mtrr_get_all_mtrrs();
+//!
+//!     // Set default mem type to WriteBack and appropriately update the fixed mtrr
+//!     mtrr_settings.mtrr_def_type_reg.set_mem_type(MtrrMemoryCacheType::WriteBack as u8);
+//!     for index in 0..mtrr_settings.fixed.mtrr.len() {
+//!         mtrr_settings.fixed.mtrr[index] = 0x0606060606060606; //WriteBack
+//!     }
+//!
+//!     // Set the MTRR settings
+//!     mtrrlib.mtrr_set_all_mtrrs(&mtrr_settings);
+//!
+//!
+//!     const BASE_128KB: u64 = 0x00020000;
+//!     const BASE_512KB: u64 = 0x00080000;
+//!     const BASE_1MB: u64 = 0x00100000;
+//!     const BASE_4GB: u64 = 0x0000000100000000;
+//!
+//!     //
+//!     // Set memory range from 640KB to 1MB to uncacheable
+//!     //
+//!     let status = mtrrlib.mtrr_set_memory_attribute(
+//!         BASE_512KB + BASE_128KB,
+//!         BASE_1MB - (BASE_512KB + BASE_128KB),
+//!         MtrrMemoryCacheType::Uncacheable,
+//!     );
+//!     assert!(status.is_ok());
+//!
+//!     //
+//!     // Set the memory range from the start of the 32-bit MMIO area (32-bit PCI
+//!     // MMIO aperture on i440fx, PCIEXBAR on q35) to 4GB as uncacheable.
+//!     //
+//!     let status = mtrrlib.mtrr_set_memory_attribute(0xB0000000, BASE_4GB - 0xB0000000, MtrrMemoryCacheType::Uncacheable);
+//!     assert!(status.is_ok());
+//!
+//!     // MTRR Settings:
+//!     // =============
+//!     // MTRR Default Type: 0x00000000000c06
+//!     // Fixed MTRR[00]   : 0x606060606060606
+//!     // Fixed MTRR[01]   : 0x606060606060606
+//!     // Fixed MTRR[02]   : 0x00000000000000
+//!     // Fixed MTRR[03]   : 0x00000000000000
+//!     // Fixed MTRR[04]   : 0x00000000000000
+//!     // Fixed MTRR[05]   : 0x00000000000000
+//!     // Fixed MTRR[06]   : 0x00000000000000
+//!     // Fixed MTRR[07]   : 0x00000000000000
+//!     // Fixed MTRR[08]   : 0x00000000000000
+//!     // Fixed MTRR[09]   : 0x00000000000000
+//!     // Fixed MTRR[10]   : 0x00000000000000
+//!     // Variable MTRR[00]: Base=0x000000c0000000 Mask=0x00003fc0000800
+//!     // Variable MTRR[01]: Base=0x000000b0000000 Mask=0x00003ff0000800
+//!     // Memory Ranges:
+//!     // ====================================
+//!     // WB:0x00000000000000-0x0000000009ffff
+//!     // UC:0x000000000a0000-0x000000000fffff
+//!     // WB:0x00000000100000-0x000000afffffff
+//!     // UC:0x000000b0000000-0x000000ffffffff
+//!     // WB:0x00000100000000-0x00003fffffffff
+//! }
+//!
+//! ```
+
 #![allow(clippy::needless_range_loop)]
 use crate::error::MtrrError;
 use crate::error::MtrrResult;
@@ -69,13 +182,14 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  Return whether MTRR is supported.
     //
-    //  @param[out]  FixedMtrrSupported   Return whether fixed MTRR is supported.
-    //  @param[out]  VariableMtrrRangesCount    Return the max number of variable MTRRs.
-    //
-    //  @retval TRUE  MTRR is supported when either fixed MTRR is supported or max number
-    //                of variable MTRRs is not 0.
-    //  @retval FALSE MTRR is not supported when both fixed MTRR is not supported and max
-    //                number of variable MTRRs is 0.
+    //  @retval  fixed_mtrr_supported          Return whether fixed MTRR is supported.
+    //  @retval  variable_mtrr_ranges_count    Return the max number of variable MTRRs.
+    //  @retval  true                          MTRR is supported when either fixed
+    //                                         MTRR is supported or max number of
+    //                                         variable MTRRs is not 0.
+    //  @retval  false                         MTRR is not supported when both
+    //                                         fixed MTRR is not supported and max
+    //                                         number of variable MTRRs is 0.
     //
     fn mtrr_lib_is_mtrr_supported_internal(&self) -> MtrrResult<(bool, u32)> {
         // Check CPUID(1).EDX[12] for MTRR capability
@@ -105,7 +219,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  Returns the variable MTRR count for the CPU.
     //
-    //  @return Variable MTRR count
+    //  @retval Variable MTRR count
     //
     pub(crate) fn get_variable_mtrr_count(&self) -> u32 {
         if !self.is_mtrr_supported() {
@@ -124,11 +238,11 @@ impl<H: HalTrait> MtrrLib<H> {
         vcnt
     }
 
-    //
-    //  Returns the default MTRR cache type for the system.
-    //
-    //  @return  The default MTRR cache type.
-    //
+    ///
+    ///  Returns the default MTRR cache type for the system.
+    ///
+    ///  @retval  The default MTRR cache type.
+    ///
     pub fn mtrr_get_default_memory_type(&self) -> MtrrMemoryCacheType {
         if !self.is_mtrr_supported() {
             return MtrrMemoryCacheType::Uncacheable;
@@ -143,7 +257,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //  This function will do some preparation for programming MTRRs:
     //  disable cache, invalid cache and disable MTRR caching functionality
     //
-    //  @param[out] MtrrContext  Pointer to context to save
+    //  @param mtrr_context  Pointer to context to save
     //
     fn mtrr_lib_pre_mtrr_change(&mut self, mtrr_context: &mut MtrrContext) {
         let mut def_type: MsrIa32MtrrDefType = Default::default();
@@ -174,7 +288,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //  This function will do some clean up after programming MTRRs:
     //  Flush all TLBs,  re-enable caching, restore CR4.
     //
-    //  @param[in] MtrrContext  Pointer to context to restore
+    //  @param mtrr_context  Pointer to context to restore
     //
     fn mtrr_lib_post_mtrr_change_enable_cache(&mut self, mtrr_context: &MtrrContext) {
         // Flush all TLBs
@@ -196,7 +310,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //  This function will do some clean up after programming MTRRs:
     //  enable MTRR caching functionality, and enable cache
     //
-    //  @param[in] MtrrContext  Pointer to context to restore
+    //  @param mtrr_context  Pointer to context to restore
     //
     fn mtrr_lib_post_mtrr_change(&mut self, mtrr_context: &mut MtrrContext) {
         // Enable Cache MTRR
@@ -212,9 +326,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  This function gets the content in fixed MTRRs
     //
-    //  @param[out]  FixedSettings  A buffer to hold fixed MTRRs content.
-    //
-    //  @retval The pointer of FixedSettings
+    //  @retval The MTRR FixedSettings
     //
     pub(crate) fn mtrr_get_fixed_mtrr(&self) -> MtrrFixedSettings {
         let mut fixed_settings = MtrrFixedSettings::default();
@@ -233,17 +345,11 @@ impl<H: HalTrait> MtrrLib<H> {
     }
 
     //
-    //  Worker function will get the raw value in variable MTRRs
+    //  Function will get the raw value in variable MTRRs
     //
-    //  If MtrrSetting is not NULL, gets the variable MTRRs raw value from input
-    //  MTRR settings buffer.
-    //  If MtrrSetting is NULL, gets the variable MTRRs raw value from MTRRs.
+    //  @param  variable_mtrr_ranges_count  Number of variable MTRRs.
     //
-    //  @param[in]  MtrrSetting        A buffer holding all MTRRs content.
-    //  @param[in]  VariableMtrrRangesCount  Number of variable MTRRs.
-    //  @param[out] VariableMtrrSettings   A buffer to hold variable MTRRs content.
-    //
-    //  @return The VariableMtrrSettings input pointer
+    //  @retval The VariableMtrrSettings
     //
     fn mtrr_get_variable_mtrr(&self, variable_mtrr_ranges_count: u32) -> MtrrVariableSettings {
         assert!(variable_mtrr_ranges_count <= MTRR_NUMBER_OF_VARIABLE_MTRR as u32);
@@ -262,16 +368,15 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  Programs fixed MTRRs registers.
     //
-    //  @param[in]      Type             The memory type to set.
-    //  @param[in, out] Base             The base address of memory range.
-    //  @param[in, out] Length           The length of memory range.
-    //  @param[in, out] LastMsrIndex     On input, the last index of the fixed MTRR MSR to program.
-    //                                   On return, the current index of the fixed MTRR MSR to program.
-    //  @param[out]     ClearMask        The bits to clear in the fixed MTRR MSR.
-    //  @param[out]     OrMask           The bits to set in the fixed MTRR MSR.
+    //  @param     type             The memory type to set.
+    //  @param     base             The base address of memory range.
+    //  @param     length           The length of memory range.
+    //  @param     last_msr_index   On input, the last index of the fixed MTRR MSR to program.
+    //                              On return, the current index of the fixed MTRR MSR to program.
+    //  @param     clear_mask       The bits to clear in the fixed MTRR MSR.
+    //  @param     or_mask          The bits to set in the fixed MTRR MSR.
     //
-    //  @retval RETURN_SUCCESS      The cache type was updated successfully
-    //  @retval RETURN_UNSUPPORTED  The requested range or cache type was invalid
+    //  @retval ReturnUnsupported  The requested range or cache type was invalid
     //                              for the fixed MTRRs.
     //
     fn mtrr_lib_program_fixed_mtrr(
@@ -341,17 +446,17 @@ impl<H: HalTrait> MtrrLib<H> {
     }
 
     //
-    //  Convert variable MTRRs to a RAW MTRR_MEMORY_RANGE array.
-    //  One MTRR_MEMORY_RANGE element is created for each MTRR setting.
+    //  Convert variable MTRRs to a RAW MtrrMemoryRange array.
+    //  One MtrrMemoryRange element is created for each MTRR setting.
     //  The routine doesn't remove the overlap or combine the near-by region.
     //
-    //  @param[in]   VariableMtrrSettings      The variable MTRR values to shadow
-    //  @param[in]   VariableMtrrRangesCount     The number of variable MTRRs
-    //  @param[in]   MtrrValidBitsMask     The mask for the valid bit of the MTRR
-    //  @param[in]   MtrrValidAddressMask  The valid address mask for MTRR
-    //  @param[out]  VariableMtrrRanges          The array to shadow variable MTRRs content
+    //  @param   variable_mtrr_settings      The variable MTRR values to shadow
+    //  @param   variable_mtrr_ranges_count  The number of variable MTRRs
+    //  @param   mtrr_valid_bits_mask        The mask for the valid bit of the MTRR
+    //  @param   mtrr_valid_address_mask     The valid address mask for MTRR
+    //  @param   variable_mtrr_ranges        The array to shadow variable MTRRs content
     //
-    //  @return      Number of MTRRs which has been used.
+    //  @retval      Number of MTRRs which has been used.
     //
     fn mtrr_lib_get_variable_memory_ranges(
         variable_mtrr_settings: &MtrrVariableSettings,
@@ -383,10 +488,10 @@ impl<H: HalTrait> MtrrLib<H> {
     //  Return the biggest alignment (lowest set bit) of address.
     //  The function is equivalent to: 1 << LowBitSet64 (Address).
     //
-    //  @param Address    The address to return the alignment.
-    //  @param Alignment0 The alignment to return when Address is 0.
+    //  @param address    The address to return the alignment.
+    //  @param alignment0 The alignment to return when Address is 0.
     //
-    //  @return The least alignment of the Address.
+    //  @retval The least alignment of the Address.
     //
     fn mtrr_lib_biggest_alignment(address: u64, alignment0: u64) -> u64 {
         if address == 0 {
@@ -405,11 +510,11 @@ impl<H: HalTrait> MtrrLib<H> {
     //  For further details, please refer the IA32 Software Developer's Manual,
     //  Volume 3, Section "MTRR Precedences".
     //
-    //  @param Left  The left MTRR type.
-    //  @param Right The right MTRR type.
+    //  @param left  The left MTRR type.
+    //  @param right The right MTRR type.
     //
-    //  @retval TRUE  Left precedes Right.
-    //  @retval FALSE Left doesn't precede Right.
+    //  @retval true  Left precedes Right.
+    //  @retval false Left doesn't precede Right.
     //
     fn mtrr_lib_type_left_precede_right(left: MtrrMemoryCacheType, right: MtrrMemoryCacheType) -> bool {
         left == MtrrMemoryCacheType::Uncacheable
@@ -421,8 +526,8 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  This function initializes the valid bits mask and valid address mask for MTRRs.
     //
-    //  @param[out]  MtrrValidBitsMask     The mask for the valid bit of the MTRR
-    //  @param[out]  MtrrValidAddressMask  The valid address mask for the MTRR
+    //  @retval  mtrr_valid_bits_mask     The mask for the valid bit of the MTRR
+    //  @retval  mtrr_valid_address_mask  The valid address mask for the MTRR
     //
     fn mtrr_lib_initialize_mtrr_mask(&self) -> (u64, u64) {
         let mut vir_phy_address_size = CpuidVirPhyAddressSizeEax::default();
@@ -474,8 +579,8 @@ impl<H: HalTrait> MtrrLib<H> {
     //  please refer the IA32 Software Developer's Manual, Volume 3,
     //  Section "MTRR Precedences".
     //
-    //  @param[in]  MtrrType1    The first kind of Memory type
-    //  @param[in]  MtrrType2    The second kind of memory type
+    //  @param  mtrr_type1    The first kind of Memory type
+    //  @param  mtrr_type2    The second kind of memory type
     //
     fn mtrr_lib_precedence(
         &self,
@@ -499,16 +604,11 @@ impl<H: HalTrait> MtrrLib<H> {
     }
 
     //
-    //  Worker function will get the memory cache type of the specific address.
+    //  Function will get the memory cache type of the specific address.
     //
-    //  If MtrrSetting is not NULL, gets the memory cache type from input
-    //  MTRR settings buffer.
-    //  If MtrrSetting is NULL, gets the memory cache type from MTRRs.
+    //  @param  address            The specific address
     //
-    //  @param[in]  MtrrSetting        A buffer holding all MTRRs content.
-    //  @param[in]  Address            The specific address
-    //
-    //  @return Memory cache type of the specific address
+    //  @retval Memory cache type of the specific address
     //
     fn mtrr_get_memory_attribute_by_address_worker(&self, address: u64) -> MtrrMemoryCacheType {
         let def_type = MsrIa32MtrrDefType::from(self.hal.asm_read_msr64(MSR_IA32_MTRR_DEF_TYPE));
@@ -567,15 +667,15 @@ impl<H: HalTrait> MtrrLib<H> {
         mem_type
     }
 
-    //
-    //  This function will get the memory cache type of the specific address.
-    //
-    //  This function is mainly for debug purpose.
-    //
-    //  @param[in]  Address   The specific address
-    //
-    //  @return Memory cache type of the specific address
-    //
+    ///
+    ///  This function will get the memory cache type of the specific address.
+    ///
+    ///  This function is mainly for debug purpose.
+    ///
+    ///  @param  address   The specific address
+    ///
+    ///  @retval Memory cache type of the specific address
+    ///
     pub fn mtrr_get_memory_attribute(&self, address: u64) -> MtrrMemoryCacheType {
         if !self.is_mtrr_supported() {
             return MtrrMemoryCacheType::Uncacheable;
@@ -588,19 +688,15 @@ impl<H: HalTrait> MtrrLib<H> {
     //  Update the Ranges array to change the specified range identified by
     //  BaseAddress and Length to Type.
     //
-    //  @param Ranges      Array holding memory type settings for all memory regions.
-    //  @param Capacity    The maximum count of memory ranges the array can hold.
-    //  @param Count       Return the new memory range count in the array.
-    //  @param BaseAddress The base address of the memory range to change type.
-    //  @param Length      The length of the memory range to change type.
-    //  @param Type        The new type of the specified memory range.
+    //  @param working_ranges           Array holding memory type settings for all memory regions.
+    //  @param working_ranges_capacity  The maximum count of memory ranges the array can hold.
+    //  @param working_ranges_count     Return the new memory range count in the array.
+    //  @param base_address             The base address of the memory range to change type.
+    //  @param length                   The length of the memory range to change type.
+    //  @param type                     The new type of the specified memory range.
     //
-    //  @retval RETURN_SUCCESS          The type of the specified memory range is
-    //                                  changed successfully.
-    //  @retval RETURN_ALREADY_STARTED  The type of the specified memory range equals
-    //                                  to the desired type.
-    //  @retval RETURN_OUT_OF_RESOURCES The new type set causes the count of memory
-    //                                  range exceeds capacity.
+    //  @retval ReturnAlreadyStarted   The type of the specified memory range equals to the desired type.
+    //  @retval ReturnOutOfResources   The new type set causes the count of memory range exceeds capacity.
     //
     fn mtrr_lib_set_memory_type(
         &self,
@@ -619,14 +715,10 @@ impl<H: HalTrait> MtrrLib<H> {
         let mut start_index = *working_ranges_count;
         let mut end_index = *working_ranges_count;
 
-        // println!("Assinged start_index: {} end_index: {} working_ranges_count: {}", start_index, end_index, *working_ranges_count);
-
         // Determine which existing range can accommodate the new range
         for index in 0..*working_ranges_count {
             let range = &working_ranges[index];
 
-            // println!("index: {} base_address/limit: {:x}/{:x} range base_address: {:x} length: {:x} mem_type: {:?}",
-            // index, base_address, limit, range.base_address, range.length, range.mem_type);
             // start index can begin on one slot and end index could land on another
             // slot depending up on the size of the new range
             if start_index == *working_ranges_count
@@ -647,7 +739,6 @@ impl<H: HalTrait> MtrrLib<H> {
             }
         }
 
-        // println!("modified start_index: {} end_index: {} working_ranges_count: {}", start_index, end_index, *working_ranges_count);
         assert!(start_index != *working_ranges_count && end_index != *working_ranges_count);
         if start_index == end_index && working_ranges[start_index].mem_type == mem_type {
             return Err(MtrrError::ReturnAlreadyStarted);
@@ -670,7 +761,6 @@ impl<H: HalTrait> MtrrLib<H> {
             length += working_ranges[end_index].length;
         }
 
-        // println!("start_index: {} end_index: {}", start_index, end_index);
         let mut delta_count: i64 = end_index as i64 - start_index as i64 - 2;
 
         if length_left == 0 {
@@ -689,12 +779,9 @@ impl<H: HalTrait> MtrrLib<H> {
             let src = i + end_index + 1;
             let dest = (i as i64 + end_index as i64 + 1 - delta_count) as usize;
             working_ranges[dest] = working_ranges[src];
-
-            // println!("src: {} dest: {} working_ranges_count: {}", src, dest, *working_ranges_count);
         }
 
         *working_ranges_count = (*working_ranges_count as i64 - delta_count) as usize;
-        // println!("working_ranges_count: {} delta_count: {}", *working_ranges_count, delta_count);
         if length_left != 0 {
             working_ranges[start_index].length = length_left;
             start_index += 1;
@@ -716,11 +803,11 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  Return the number of memory types in range [BaseAddress, BaseAddress + Length).
     //
-    //  @param Ranges      Array holding memory type settings for all memory regions.
-    //  @param RangeCount  The count of memory ranges the array holds.
-    //  @param BaseAddress Base address.
-    //  @param Length      Length.
-    //  @param Types       Return bit mask to indicate all memory types in the specified range.
+    //  @param ranges       Array holding memory type settings for all memory regions.
+    //  @param range_count  The count of memory ranges the array holds.
+    //  @param base_address Base address.
+    //  @param length       Length.
+    //  @param types        Return bit mask to indicate all memory types in the specified range.
     //
     //  @retval  Number of memory types.
     //
@@ -765,12 +852,12 @@ impl<H: HalTrait> MtrrLib<H> {
     //  the Previous of all vertices from Start to Stop is updated to reflect
     //  how the memory range is covered by MTRR.
     //
-    //  @param VertexCount     The count of vertices in the graph.
-    //  @param Vertices        Array holding all vertices.
-    //  @param Weight          2-dimention array holding weights between vertices.
-    //  @param Start           Start vertex.
-    //  @param Stop            Stop vertex.
-    //  @param IncludeOptional TRUE to count the optional weight.
+    //  @param vertex_count     The count of vertices in the graph.
+    //  @param vertices         Array holding all vertices.
+    //  @param weight           2-dimension array holding weights between vertices.
+    //  @param start            Start vertex.
+    //  @param stop             Stop vertex.
+    //  @param include_optional TRUE to count the optional weight.
     //
     #[allow(clippy::too_many_arguments)]
     fn mtrr_lib_calculate_least_mtrrs(
@@ -839,15 +926,14 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  Append the MTRR setting to MTRR setting array.
     //
-    //  @param Mtrrs        Array holding all MTRR settings.
-    //  @param MtrrCapacity Capacity of the MTRR array.
-    //  @param MtrrCount    The count of MTRR settings in array.
-    //  @param BaseAddress  Base address.
-    //  @param Length       Length.
-    //  @param Type         Memory type.
+    //  @param mtrrs         Array holding all MTRR settings.
+    //  @param mtrr_capacity Capacity of the MTRR array.
+    //  @param mtrr_count    The count of MTRR settings in array.
+    //  @param base_address  Base address.
+    //  @param length        Length.
+    //  @param type          Memory type.
     //
-    //  @retval RETURN_SUCCESS          MTRR setting is appended to array.
-    //  @retval RETURN_OUT_OF_RESOURCES Array is full.
+    //  @retval ReturnOutOfResources Array is full.
     //
     fn mtrr_lib_append_variable_mtrr(
         &self,
@@ -873,7 +959,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  Return the memory type that has the least precedence.
     //
-    //  @param TypeBits  Bit mask of memory type.
+    //  @param mem_type_bits  Bit mask of memory type.
     //
     //  @retval  Memory type that has the least precedence.
     //
@@ -892,23 +978,22 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  Calculate the subtractive path from vertex Start to Stop.
     //
-    //  @param DefaultType  Default memory type.
-    //  @param A0           Alignment to use when base address is 0.
-    //  @param Ranges       Array holding memory type settings for all memory regions.
-    //  @param RangeCount   The count of memory ranges the array holds.
-    //  @param VertexCount  The count of vertices in the graph.
-    //  @param Vertices     Array holding all vertices.
-    //  @param Weight       2-dimention array holding weights between vertices.
-    //  @param Start        Start vertex.
-    //  @param Stop         Stop vertex.
-    //  @param Types        Type bit mask of memory range from Start to Stop.
-    //  @param TypeCount    Number of different memory types from Start to Stop.
-    //  @param Mtrrs        Array holding all MTRR settings.
-    //  @param MtrrCapacity Capacity of the MTRR array.
-    //  @param MtrrCount    The count of MTRR settings in array.
+    //  @param default_type  Default memory type.
+    //  @param a0            Alignment to use when base address is 0.
+    //  @param ranges        Array holding memory type settings for all memory regions.
+    //  @param range_count   The count of memory ranges the array holds.
+    //  @param vertex_count  The count of vertices in the graph.
+    //  @param vertices      Array holding all vertices.
+    //  @param weight        2-dimention array holding weights between vertices.
+    //  @param start         Start vertex.
+    //  @param stop          Stop vertex.
+    //  @param types         Type bit mask of memory range from Start to Stop.
+    //  @param type_count    Number of different memory types from Start to Stop.
+    //  @param mtrrs         Array holding all MTRR settings.
+    //  @param mtrr_capacity Capacity of the MTRR array.
+    //  @param mtrr_count    The count of MTRR settings in array.
     //
-    //  @retval RETURN_SUCCESS          The subtractive path is calculated successfully.
-    //  @retval RETURN_OUT_OF_RESOURCES The MTRR setting array is full.
+    //  @retval ReturnOutOfResources The MTRR setting array is full.
     //
     #[allow(clippy::too_many_arguments)]
     fn mtrr_lib_calculate_subtractive_path(
@@ -1094,23 +1179,21 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  Calculate MTRR settings to cover the specified memory ranges.
     //
-    //  @param DefaultType  Default memory type.
-    //  @param A0           Alignment to use when base address is 0.
-    //  @param Ranges       Memory range array holding the memory type
-    //                      settings for all memory address.
-    //  @param RangeCount   Count of memory ranges.
-    //  @param Scratch      A temporary scratch buffer that is used to perform the calculation.
-    //                      This is an optional parameter that may be NULL.
-    //  @param ScratchSize  Pointer to the size in bytes of the scratch buffer.
-    //                      It may be updated to the actual required size when the calculation
-    //                      needs more scratch buffer.
-    //  @param Mtrrs        Array holding all MTRR settings.
-    //  @param MtrrCapacity Capacity of the MTRR array.
-    //  @param MtrrCount    The count of MTRR settings in array.
+    //  @param default_type  Default memory type.
+    //  @param a0            Alignment to use when base address is 0.
+    //  @param ranges        Memory range array holding the memory type settings for all memory address.
+    //  @param range_count   Count of memory ranges.
+    //  @param scratch       A temporary scratch buffer that is used to perform the calculation.
+    //                       This is an optional parameter that may be NULL.
+    //  @param scratch_size  Pointer to the size in bytes of the scratch buffer.
+    //                       It may be updated to the actual required size when the calculation
+    //                       needs more scratch buffer.
+    //  @param mtrrs         Array holding all MTRR settings.
+    //  @param mtrr_capacity Capacity of the MTRR array.
+    //  @param mtrr_count    The count of MTRR settings in array.
     //
-    //  @retval RETURN_SUCCESS          Variable MTRRs are allocated successfully.
-    //  @retval RETURN_OUT_OF_RESOURCES Count of variable MTRRs exceeds capacity.
-    //  @retval RETURN_BUFFER_TOO_SMALL The scratch buffer is too small for MTRR calculation.
+    //  @retval ReturnOutOfResources Count of variable MTRRs exceeds capacity.
+    //  @retval ReturnBufferTooSmall The scratch buffer is too small for MTRR calculation.
     //
     #[allow(clippy::too_many_arguments)]
     fn mtrr_lib_calculate_mtrrs(
@@ -1131,19 +1214,6 @@ impl<H: HalTrait> MtrrLib<H> {
         let base0 = ranges[0].base_address;
         let base1 = ranges[range_count - 1].base_address + ranges[range_count - 1].length;
 
-        // println!(
-        //     "MtrrLibCalculateMtrrs - default_type: {:?} a0: {:x} range_count: {:x}",
-        //     default_type, a0, range_count
-        // );
-        // for (index, range) in ranges.iter().enumerate() {
-        //     println!(
-        //         "range[{}]  base_address: {:x} - {:x} mem_type: {:?}",
-        //         index,
-        //         range.base_address,
-        //         range.base_address + range.length,
-        //         range.mem_type
-        //     );
-        // }
         assert!(base0 & !((base1 - base0) - 1) == base0);
 
         // Counting the number of vertices
@@ -1162,28 +1232,10 @@ impl<H: HalTrait> MtrrLib<H> {
             while length != 0 {
                 let alignment = Self::mtrr_lib_biggest_alignment(base, a0);
                 let mut sub_length = alignment;
-                // println!(
-                //     "  Vertex[{}] = {:x} - {:x}  alignment: {:x} sublength: {:x} length: {:x}",
-                //     vertex_index,
-                //     base,
-                //     base + sub_length,
-                //     alignment,
-                //     sub_length,
-                //     length
-                // );
                 if sub_length > length {
                     sub_length = get_power_of_two_64(length);
                 }
 
-                // println!(
-                //     "       Vertex[{}] = {:x} - {:x}  alignment: {:x} sublength: {:x} length: {:x}",
-                //     vertex_index,
-                //     base,
-                //     base + sub_length,
-                //     alignment,
-                //     sub_length,
-                //     length
-                // );
                 if vertex_index < *scratch_size / size_of::<MtrrLibAddress>() {
                     vertices[vertex_index] = MtrrLibAddress {
                         address: base,
@@ -1199,27 +1251,10 @@ impl<H: HalTrait> MtrrLib<H> {
                 base += sub_length;
                 length -= sub_length;
                 vertex_index += 1;
-                // println!(
-                //     "  Vertex[{}] = {:x} - {:x}  alignment: {:x} sublength: {:x} mem_type: {:x}",
-                //     vertex_index - 1,
-                //     vertices[vertex_index - 1].address,
-                //     vertices[vertex_index - 1].address + vertices[vertex_index - 1].length,
-                //     alignment,
-                //     sub_length,
-                //     vertices[vertex_index - 1].mem_type
-                // );
             }
         }
 
-        // Vertices[VertexIndex] = Base1, so whole vertex count is (VertexIndex + 1).
         let vertex_count = vertex_index + 1;
-        // println!(
-        //     "  Count of vertices ({:x} - {:x}) = {}\n",
-        //     ranges[0].base_address,
-        //     ranges[range_count - 1].base_address + ranges[range_count - 1].length,
-        //     vertex_count
-        // );
-
         assert!(vertex_count < u16::MAX as usize);
 
         let required_scratch_size =
@@ -1240,14 +1275,11 @@ impl<H: HalTrait> MtrrLib<H> {
 
         for vertex_index in 0..vertex_count {
             unsafe {
-                // println!("vertex_index: {}", vertex_index);
                 // Set optional weight between vertices and self->self to 0
                 let mm = m(vertex_index as u16, 0, vertex_count as u16);
-                // println!("mm: {}", mm);
                 write_bytes(&mut weight[mm] as *mut u8, 0, vertex_index + 1);
                 // Set mandatory weight between vertices to MAX_WEIGHT
                 let mm2 = m(vertex_index as u16, vertex_index as u16 + 1, vertex_count as u16);
-                // println!("mm2: {}", mm2);
                 write_bytes(&mut weight[mm2] as *mut u8, MAX_WEIGHT, vertex_count - vertex_index - 1);
             }
         }
@@ -1375,30 +1407,19 @@ impl<H: HalTrait> MtrrLib<H> {
             stop = start;
         }
 
-        // for index in 0..*mtrr_count {
-        //     println!(
-        //         "  MTRR base_address: {:x} - {:x} mem_type: {:?}",
-        //         mtrrs[index].base_address,
-        //         mtrrs[index].base_address + mtrrs[index].length,
-        //         mtrrs[index].mem_type
-        //     );
-        // }
-
-        // println!("-------------------mtrr_lib_calculate_mtrrs end---------------------------");
         Ok(())
     }
 
     //
     //  Apply the fixed MTRR settings to memory range array.
     //
-    //  @param Fixed             The fixed MTRR settings.
-    //  @param Ranges            Return the memory range array holding memory type
-    //                           settings for all memory address.
-    //  @param RangeCapacity     The capacity of memory range array.
-    //  @param RangeCount        Return the count of memory range.
+    //  @param fixed              The fixed MTRR settings.
+    //  @param ranges             Return the memory range array holding memory type
+    //                            settings for all memory address.
+    //  @param range_capacity     The capacity of memory range array.
+    //  @param range_count        Return the count of memory range.
     //
-    //  @retval RETURN_SUCCESS          The memory range array is returned successfully.
-    //  @retval RETURN_OUT_OF_RESOURCES The count of memory ranges exceeds capacity.
+    //  @retval ReturnOutOfResources The count of memory ranges exceeds capacity.
     //
     fn mtrr_lib_apply_fixed_mtrrs(
         &self,
@@ -1444,14 +1465,13 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  Apply the variable MTRR settings to memory range array.
     //
-    //  @param VariableMtrrRanges      The variable MTRR array.
-    //  @param VariableMtrrRangesCount The count of variable MTRRs.
-    //  @param Ranges            Return the memory range array with new MTRR settings applied.
-    //  @param RangeCapacity     The capacity of memory range array.
-    //  @param RangeCount        Return the count of memory range.
+    //  @param variable_mtrr_ranges       The variable MTRR array.
+    //  @param variable_mtrr_ranges_count The count of variable MTRRs.
+    //  @param ranges                     Return the memory range array with new MTRR settings applied.
+    //  @param range_capacity             The capacity of memory range array.
+    //  @param range_count                Return the count of memory range.
     //
-    //  @retval RETURN_SUCCESS          The memory range array is returned successfully.
-    //  @retval RETURN_OUT_OF_RESOURCES The count of memory ranges exceeds capacity.
+    //  @retval ReturnOutOfResources The count of memory ranges exceeds capacity.
     //
     fn mtrr_lib_apply_variable_mtrrs(
         &self,
@@ -1461,17 +1481,9 @@ impl<H: HalTrait> MtrrLib<H> {
         working_ranges_capacity: usize,
         working_ranges_count: &mut usize,
     ) -> MtrrResult<()> {
-        // println!("-------------------mtrr_lib_apply_variable_mtrrs start---------------------------");
         // 1. Set WB (Write Back)
         for index in 0..original_variable_mtrr_ranges_count as usize {
             let range = &original_variable_mtrr_ranges[index];
-            // println!(
-            //     "SET 1  range[{}] = {:x} - {:x} mem_type: {:?}",
-            //     index,
-            //     range.base_address,
-            //     range.base_address + range.length,
-            //     range.mem_type
-            // );
             if range.length != 0 && range.mem_type == MtrrMemoryCacheType::WriteBack {
                 self.mtrr_lib_set_memory_type(
                     working_ranges,
@@ -1481,36 +1493,12 @@ impl<H: HalTrait> MtrrLib<H> {
                     range.length,
                     range.mem_type,
                 )?;
-
-                // for index2 in 0..*working_ranges_count {
-                //     println!(
-                //         "   SET 1  working_ranges[{}] = {:x} - {:x} mem_type: {:?}",
-                //         index2,
-                //         working_ranges[index2].base_address,
-                //         working_ranges[index2].base_address + working_ranges[index2].length,
-                //         working_ranges[index2].mem_type
-                //     );
-                // }
             }
         }
-
-        // for index in 0..*working_ranges_count {
-        //     println!(
-        //         "SET 1  working_ranges[{}] = {:x} - {:x} mem_type: {:?}",
-        //         index, working_ranges[index].base_address, working_ranges[index].base_address + working_ranges[index].length, working_ranges[index].mem_type
-        //     );
-        // }
 
         // 2. Set other types (non-WB and non-UC)
         for index in 0..original_variable_mtrr_ranges_count as usize {
             let range = &original_variable_mtrr_ranges[index];
-            // println!(
-            //     "SET 2  range[{}] = {:x} - {:x} mem_type: {:?}",
-            //     index,
-            //     range.base_address,
-            //     range.base_address + range.length,
-            //     range.mem_type
-            // );
             if range.length != 0
                 && range.mem_type != MtrrMemoryCacheType::WriteBack
                 && range.mem_type != MtrrMemoryCacheType::Uncacheable
@@ -1523,29 +1511,12 @@ impl<H: HalTrait> MtrrLib<H> {
                     range.length,
                     range.mem_type,
                 )?;
-
-                // for index2 in 0..*working_ranges_count {
-                //     println!(
-                //         "   SET 2  working_ranges[{}] = {:x} - {:x} mem_type: {:?}",
-                //         index2,
-                //         working_ranges[index2].base_address,
-                //         working_ranges[index2].base_address + working_ranges[index2].length,
-                //         working_ranges[index2].mem_type
-                //     );
-                // }
             }
         }
 
         // 3. Set UC (Uncacheable)
         for index in 0..original_variable_mtrr_ranges_count as usize {
             let range = &original_variable_mtrr_ranges[index];
-            // println!(
-            //     "SET 3  range[{}] = {:x} - {:x} mem_type: {:?}",
-            //     index,
-            //     range.base_address,
-            //     range.base_address + range.length,
-            //     range.mem_type
-            // );
             if range.length != 0 && range.mem_type == MtrrMemoryCacheType::Uncacheable {
                 self.mtrr_lib_set_memory_type(
                     working_ranges,
@@ -1555,36 +1526,20 @@ impl<H: HalTrait> MtrrLib<H> {
                     range.length,
                     range.mem_type,
                 )?;
-                // for index2 in 0..*working_ranges_count {
-                //     println!(
-                //         "   SET 3  working_ranges[{}] = {:x} - {:x} mem_type: {:?}",
-                //         index2,
-                //         working_ranges[index2].base_address,
-                //         working_ranges[index2].base_address + working_ranges[index2].length,
-                //         working_ranges[index2].mem_type
-                //     );
-                // }
             }
         }
 
-        // for index in 0..*working_ranges_count {
-        //     println!(
-        //         "SET 3  working_ranges[{}] = {:x} - {:x} mem_type: {:?}",
-        //         index, working_ranges[index].base_address, working_ranges[index].base_address + working_ranges[index].length, working_ranges[index].mem_type
-        //     );
-        // }
-        // println!("-------------------mtrr_lib_apply_variable_mtrrs end---------------------------");
         Ok(())
     }
 
     //
     //  Return the memory type bit mask that's compatible to first type in the Ranges.
     //
-    //  @param Ranges     Memory range array holding the memory type
-    //                    settings for all memory address.
-    //  @param RangeCount Count of memory ranges.
+    //  @param ranges      Memory range array holding the memory type
+    //                     settings for all memory address.
+    //  @param range_count Count of memory ranges.
     //
-    //  @return Compatible memory type bit mask.
+    //  @retval Compatible memory type bit mask.
     //
     fn mtrr_lib_get_compatible_types(ranges: &[MtrrMemoryRange]) -> u8 {
         assert!(!ranges.is_empty());
@@ -1625,11 +1580,11 @@ impl<H: HalTrait> MtrrLib<H> {
     //  This routine is to make sure the modification to destination MTRR settings
     //  is as small as possible.
     //
-    //  @param DstMtrrs     Destination MTRR settings.
-    //  @param DstMtrrCount Count of destination MTRR settings.
-    //  @param SrcMtrrs     Source MTRR settings.
-    //  @param SrcMtrrCount Count of source MTRR settings.
-    //  @param Modified     Flag array to indicate which destination MTRR setting is modified.
+    //  @param dst_mtrrs      Destination MTRR settings.
+    //  @param dst_mtrr_count Count of destination MTRR settings.
+    //  @param src_mtrrs      Source MTRR settings.
+    //  @param src_mtrr_count Count of source MTRR settings.
+    //  @param modified       Flag array to indicate which destination MTRR setting is modified.
     //
     fn mtrr_lib_merge_variable_mtrr(
         &self,
@@ -1692,21 +1647,20 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  Calculate the variable MTRR settings for all memory ranges.
     //
-    //  @param DefaultType          Default memory type.
-    //  @param A0                   Alignment to use when base address is 0.
-    //  @param WorkingRanges               Memory range array holding the memory type
-    //                              settings for all memory address.
-    //  @param WorkingRangeCount           Count of memory ranges.
-    //  @param Scratch              Scratch buffer to be used in MTRR calculation.
-    //  @param ScratchSize          Pointer to the size of scratch buffer.
-    //  @param VariableMtrrRanges         Array holding all MTRR settings.
-    //  @param VariableMtrrCapacity Capacity of the MTRR array.
-    //  @param VariableMtrrRangesCount    The count of MTRR settings in array.
+    //  @param default_type                  Default memory type.
+    //  @param a0                            Alignment to use when base address is 0.
+    //  @param working_ranges                Memory range array holding the memory type
+    //                                       settings for all memory address.
+    //  @param working_range_count           Count of memory ranges.
+    //  @param scratch                       Scratch buffer to be used in MTRR calculation.
+    //  @param scratch_size                  Pointer to the size of scratch buffer.
+    //  @param variable_mtrr_ranges          Array holding all MTRR settings.
+    //  @param variable_mtrr_capacity        Capacity of the MTRR array.
+    //  @param variable_mtrr_ranges_count    The count of MTRR settings in array.
     //
-    //  @retval RETURN_SUCCESS          Variable MTRRs are allocated successfully.
-    //  @retval RETURN_OUT_OF_RESOURCES Count of variable MTRRs exceeds capacity.
-    //  @retval RETURN_BUFFER_TOO_SMALL The scratch buffer is too small for MTRR calculation.
-    //                                  The required scratch buffer size is returned through ScratchSize.
+    //  @retval ReturnOutOfResources Count of variable MTRRs exceeds capacity.
+    //  @retval ReturnBufferTooSmall The scratch buffer is too small for MTRR calculation.
+    //                               The required scratch buffer size is returned through ScratchSize.
     //
     #[allow(clippy::too_many_arguments)]
     fn mtrr_lib_set_memory_ranges(
@@ -1725,15 +1679,6 @@ impl<H: HalTrait> MtrrLib<H> {
 
         let mut biggest_scratch_size = 0;
 
-        // for i in 0..working_range_count {
-        //     println!(
-        //         "##### WorkingRanges[{}]  base_address: {:x} - {:x} mem_type: {:?}",
-        //         i,
-        //         working_ranges[i].base_address,
-        //         working_ranges[i].base_address + working_ranges[i].length,
-        //         working_ranges[i].mem_type
-        //     );
-        // }
         let mut index = 0;
         while index < working_range_count {
             let mut base0 = working_ranges[index].base_address;
@@ -1742,7 +1687,6 @@ impl<H: HalTrait> MtrrLib<H> {
                 assert!(working_ranges[index].base_address == base0);
 
                 let mut alignment = Self::mtrr_lib_biggest_alignment(base0, a0);
-                // println!("####### Base0: {:x} Alignment: {:x}", base0, alignment);
                 while base0 + alignment <= working_ranges[index].base_address + working_ranges[index].length {
                     if biggest_scratch_size <= *scratch_size && working_ranges[index].mem_type != default_type {
                         self.mtrr_lib_append_variable_mtrr(
@@ -1757,7 +1701,6 @@ impl<H: HalTrait> MtrrLib<H> {
 
                     base0 += alignment;
                     alignment = Self::mtrr_lib_biggest_alignment(base0, a0);
-                    // println!("  ####### Base0: {:x} Alignment: {:x}", base0, alignment);
                 }
 
                 working_ranges[index].length -= base0 - working_ranges[index].base_address;
@@ -1788,7 +1731,6 @@ impl<H: HalTrait> MtrrLib<H> {
             let length = get_power_of_two_64(working_ranges[end].base_address + working_ranges[end].length - base0);
             let base1 = base0 + core::cmp::min(alignment, length);
 
-            // println!("Base0: {:x} Base1: {:x} Length: {:x} Alignment: {:x}", base0, base1, length, alignment);
             // Base1 may not in WorkingRanges[End]. Update End to the range Base1 belongs to.
             end = index;
             while (end + 1) < working_range_count {
@@ -1845,14 +1787,13 @@ impl<H: HalTrait> MtrrLib<H> {
     //  Set the below-1MB memory attribute to fixed MTRR buffer.
     //  Modified flag array indicates which fixed MTRR is modified.
     //
-    //  @param [in, out] ClearMasks    The bits (when set) to clear in the fixed MTRR MSR.
-    //  @param [in, out] OrMasks       The bits to set in the fixed MTRR MSR.
-    //  @param [in]      BaseAddress   Base address.
-    //  @param [in]      Length        Length.
-    //  @param [in]      Type          Memory type.
+    //  @param  clear_masks    The bits (when set) to clear in the fixed MTRR MSR.
+    //  @param  or_masks       The bits to set in the fixed MTRR MSR.
+    //  @param  base_address   Base address.
+    //  @param  length         Length.
+    //  @param  type           Memory type.
     //
-    //  @retval RETURN_SUCCESS      The memory attribute is set successfully.
-    //  @retval RETURN_UNSUPPORTED  The requested range or cache type was invalid
+    //  @retval ReturnUnsupported  The requested range or cache type was invalid
     //                              for the fixed MTRRs.
     //
     fn mtrr_lib_set_below_1mb_memory_attribute(
@@ -1890,28 +1831,25 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  This function attempts to set the attributes into MTRR setting buffer for multiple memory ranges.
     //
-    //  @param[in, out]  MtrrSetting  MTRR setting buffer to be set.
-    //  @param[in]       Scratch      A temporary scratch buffer that is used to perform the calculation.
-    //  @param[in, out]  ScratchSize  Pointer to the size in bytes of the scratch buffer.
+    //  @param   mtrr_setting         MTRR setting buffer to be set.
+    //  @param   scratch              A temporary scratch buffer that is used to perform the calculation.
+    //  @param   scratch_size         Pointer to the size in bytes of the scratch buffer.
     //                                It may be updated to the actual required size when the calculation
     //                                needs more scratch buffer.
-    //  @param[in]       Ranges       Pointer to an array of MTRR_MEMORY_RANGE.
+    //  @param   ranges               Pointer to an array of MtrrMemoryRange.
     //                                When range overlap happens, the last one takes higher priority.
     //                                When the function returns, either all the attributes are set successfully,
     //                                or none of them is set.
-    //  @param[in]       WorkingRangeCount   Count of MTRR_MEMORY_RANGE.
+    //  @param   working_range_count  Count of MtrrMemoryRange.
     //
-    //  @retval RETURN_SUCCESS            The attributes were set for all the memory ranges.
-    //  @retval RETURN_INVALID_PARAMETER  Length in any range is zero.
-    //  @retval RETURN_UNSUPPORTED        The processor does not support one or more bytes of the
-    //                                    memory resource range specified by BaseAddress and Length in any range.
-    //  @retval RETURN_UNSUPPORTED        The bit mask of attributes is not support for the memory resource
-    //                                    range specified by BaseAddress and Length in any range.
-    //  @retval RETURN_OUT_OF_RESOURCES   There are not enough system resources to modify the attributes of
-    //                                    the memory resource ranges.
-    //  @retval RETURN_ACCESS_DENIED      The attributes for the memory resource range specified by
-    //                                    BaseAddress and Length cannot be modified.
-    //  @retval RETURN_BUFFER_TOO_SMALL   The scratch buffer is too small for MTRR calculation.
+    //  @retval ReturnInvalidParameter   Length in any range is zero.
+    //  @retval ReturnUnsupported        The processor does not support one or more bytes of the
+    //                                   memory resource range specified by BaseAddress and Length in any range.
+    //  @retval ReturnUnsupported        The bit mask of attributes is not support for the memory resource
+    //                                   range specified by BaseAddress and Length in any range.
+    //  @retval ReturnOutOfResources     There are not enough system resources to modify the attributes of
+    //                                   the memory resource ranges.
+    //  @retval ReturnBufferTooSmall     The scratch buffer is too small for MTRR calculation.
     //
     #[allow(clippy::mut_range_bound)]
     fn mtrr_set_memory_attributes_internal(
@@ -2027,17 +1965,6 @@ impl<H: HalTrait> MtrrLib<H> {
                 &mut working_range_count,
             )?;
 
-            // println!("mtrr_lib_apply_variable_mtrrs Working range count: {}", working_range_count);
-            // for index in 0..working_range_count {
-            //     println!(
-            //         "Working range: {}: [{:016x}, {:016x}) {:?}\n",
-            //         index,
-            //         working_ranges[index].base_address,
-            //         working_ranges[index].base_address + working_ranges[index].length,
-            //         working_ranges[index].mem_type as u8,
-            //     );
-            // }
-
             assert!(original_variable_mtrr_ranges_count >= self.hal.get_pcd_cpu_number_of_reserved_variable_mtrrs());
 
             firmware_variable_mtrr_count =
@@ -2061,7 +1988,6 @@ impl<H: HalTrait> MtrrLib<H> {
             }
 
             // 2.3. Apply the new memory attribute settings to Ranges.
-            // println!("Step 2.3");
             modified = false;
             for index in 0..range_count {
                 base_address = ranges[index].base_address;
@@ -2092,25 +2018,9 @@ impl<H: HalTrait> MtrrLib<H> {
                 }
             }
 
-            // for index2 in 0..working_range_count {
-            //     println!(
-            //         "Working range: {}: [{:016x}, {:016x}) {:?}\n",
-            //         index2,
-            //         working_ranges[index2].base_address,
-            //         working_ranges[index2].base_address + working_ranges[index2].length,
-            //         working_ranges[index2].mem_type as u8,
-            //     );
-            // }
             if modified {
                 // 2.4. Calculate the Variable MTRR settings based on the Ranges.
                 //      Buffer Too Small may be returned if the scratch buffer size is insufficient.
-                // println!(
-                //     "mtrr_valid_bits_mask: {:016x} mtrr_valid_address_mask:  {:016x}",
-                //     mtrr_valid_bits_mask, mtrr_valid_address_mask
-                // );
-                // println!("high_bit_set_64(mtrr_valid_bits_mask) = {}", high_bit_set_64(mtrr_valid_bits_mask));
-                // println!("a0: {:016x} ", 1u64 << high_bit_set_64(mtrr_valid_bits_mask));
-                // println!("Step 2.4");
                 self.mtrr_lib_set_memory_ranges(
                     default_type,
                     1 << high_bit_set_64(mtrr_valid_bits_mask),
@@ -2143,7 +2053,6 @@ impl<H: HalTrait> MtrrLib<H> {
                     return Err(MtrrError::ReturnOutOfResources);
                 }
 
-                // println!("Step 2.6");
                 // 2.6. Merge the WorkingVariableMtrrRanges to OriginalVariableMtrrRanges
                 //      Make sure least modification is made to OriginalVariableMtrrRanges.
                 self.mtrr_lib_merge_variable_mtrr(
@@ -2159,7 +2068,6 @@ impl<H: HalTrait> MtrrLib<H> {
         // 3. Apply the below-1MB memory attribute settings
         clear_masks.fill(0);
         or_masks.fill(0);
-        // println!("Step 3");
         for index in 0..range_count {
             if ranges[index].base_address >= fixed_mtrr_memory_limit {
                 continue;
@@ -2221,35 +2129,26 @@ impl<H: HalTrait> MtrrLib<H> {
         Ok(())
     }
 
-    //
-    //  This function attempts to set the attributes into MTRR setting buffer for a memory range.
-    //
-    //  @param[in, out]  MtrrSetting  MTRR setting buffer to be set.
-    //  @param[in]       BaseAddress  The physical address that is the start address
-    //                                of a memory range.
-    //  @param[in]       Length       The size in bytes of the memory range.
-    //  @param[in]       Attribute    The bit mask of attributes to set for the
-    //                                memory range.
-    //
-    //  @retval RETURN_SUCCESS            The attributes were set for the memory range.
-    //  @retval RETURN_INVALID_PARAMETER  Length is zero.
-    //  @retval RETURN_UNSUPPORTED        The processor does not support one or more bytes of the
-    //                                    memory resource range specified by BaseAddress and Length.
-    //  @retval RETURN_UNSUPPORTED        The bit mask of attributes is not support for the memory resource
-    //                                    range specified by BaseAddress and Length.
-    //  @retval RETURN_ACCESS_DENIED      The attributes for the memory resource range specified by
-    //                                    BaseAddress and Length cannot be modified.
-    //  @retval RETURN_OUT_OF_RESOURCES   There are not enough system resources to modify the attributes of
-    //                                    the memory resource range.
-    //                                    Multiple memory range attributes setting by calling this API multiple
-    //                                    times may fail with status RETURN_OUT_OF_RESOURCES. It may not mean
-    //                                    the number of CPU MTRRs are too small to set such memory attributes.
-    //                                    Pass the multiple memory range attributes to one call of
-    //                                    MtrrSetMemoryAttributesInMtrrSettings() may succeed.
-    //  @retval RETURN_BUFFER_TOO_SMALL   The fixed internal scratch buffer is too small for MTRR calculation.
-    //                                    Caller should use MtrrSetMemoryAttributesInMtrrSettings() to specify
-    //                                    external scratch buffer.
-    //
+    ///
+    ///  This function attempts to set the attributes for a set of memory ranges.
+    ///
+    ///  @param       ranges  The physical memory ranges
+    ///
+    ///  @retval ReturnUnsupported        The processor does not support one or more bytes of the
+    ///                                   memory resource range specified by BaseAddress and Length.
+    ///  @retval ReturnUnsupported        The bit mask of attributes is not support for the memory resource
+    ///                                   range specified by BaseAddress and Length.
+    ///  @retval ReturnOutOfResources     There are not enough system resources to modify the attributes of
+    ///                                   the memory resource range.
+    ///                                   Multiple memory range attributes setting by calling this API multiple
+    ///                                   times may fail with status ReturnOutOfResources. It may not mean
+    ///                                   the number of CPU MTRRs are too small to set such memory attributes.
+    ///                                   Pass the multiple memory range attributes to one call of
+    ///                                   MtrrSetMemoryAttributesInMtrrSettings() may succeed.
+    ///  @retval ReturnBufferTooSmall     The fixed internal scratch buffer is too small for MTRR calculation.
+    ///                                   Caller should use MtrrSetMemoryAttributesInMtrrSettings() to specify
+    ///                                   external scratch buffer.
+    ///
     pub fn mtrr_set_memory_attributes(&mut self, ranges: &[MtrrMemoryRange]) -> MtrrResult<()> {
         let mut scratch: [u8; SCRATCH_BUFFER_SIZE] = [0; SCRATCH_BUFFER_SIZE];
         let mut scratch_size = scratch.len();
@@ -2257,39 +2156,34 @@ impl<H: HalTrait> MtrrLib<H> {
         self.mtrr_set_memory_attributes_internal(&mut scratch, &mut scratch_size, ranges, ranges.len())
     }
 
-    //
-    //  This function attempts to set the attributes for a memory range.
-    //
-    //  @param[in]  BaseAddress        The physical address that is the start
-    //                                 address of a memory range.
-    //  @param[in]  Length             The size in bytes of the memory range.
-    //  @param[in]  Attributes         The bit mask of attributes to set for the
-    //                                 memory range.
-    //
-    //  @retval RETURN_SUCCESS            The attributes were set for the memory
-    //                                    range.
-    //  @retval RETURN_INVALID_PARAMETER  Length is zero.
-    //  @retval RETURN_UNSUPPORTED        The processor does not support one or
-    //                                    more bytes of the memory resource range
-    //                                    specified by BaseAddress and Length.
-    //  @retval RETURN_UNSUPPORTED        The bit mask of attributes is not support
-    //                                    for the memory resource range specified
-    //                                    by BaseAddress and Length.
-    //  @retval RETURN_ACCESS_DENIED      The attributes for the memory resource
-    //                                    range specified by BaseAddress and Length
-    //                                    cannot be modified.
-    //  @retval RETURN_OUT_OF_RESOURCES   There are not enough system resources to
-    //                                    modify the attributes of the memory
-    //                                    resource range.
-    //                                    Multiple memory range attributes setting by calling this API multiple
-    //                                    times may fail with status RETURN_OUT_OF_RESOURCES. It may not mean
-    //                                    the number of CPU MTRRs are too small to set such memory attributes.
-    //                                    Pass the multiple memory range attributes to one call of
-    //                                    MtrrSetMemoryAttributesInMtrrSettings() may succeed.
-    //  @retval RETURN_BUFFER_TOO_SMALL   The fixed internal scratch buffer is too small for MTRR calculation.
-    //                                    Caller should use MtrrSetMemoryAttributesInMtrrSettings() to specify
-    //                                    external scratch buffer.
-    //
+    ///
+    ///  This function attempts to set the attributes for a memory range.
+    ///
+    ///  @param  base_address        The physical address that is the start
+    ///                              address of a memory range.
+    ///  @param  length              The size in bytes of the memory range.
+    ///  @param  attributes          The bit mask of attributes to set for the
+    ///                                 memory range.
+    ///
+    ///  @retval ReturnInvalidParameter  Length is zero.
+    ///  @retval ReturnUnsupported       The processor does not support one or
+    ///                                  more bytes of the memory resource range
+    ///                                  specified by BaseAddress and Length.
+    ///  @retval ReturnUnsupported       The bit mask of attributes is not support
+    ///                                  for the memory resource range specified
+    ///                                  by BaseAddress and Length.
+    ///  @retval ReturnOutOfResources    There are not enough system resources to
+    ///                                  modify the attributes of the memory
+    ///                                  resource range.
+    ///                                  Multiple memory range attributes setting by calling this API multiple
+    ///                                  times may fail with status ReturnOutOfResources. It may not mean
+    ///                                  the number of CPU MTRRs are too small to set such memory attributes.
+    ///                                  Pass the multiple memory range attributes to one call of
+    ///                                  MtrrSetMemoryAttributesInMtrrSettings() may succeed.
+    ///  @retval ReturnBufferTooSmall    The fixed internal scratch buffer is too small for MTRR calculation.
+    ///                                  Caller should use MtrrSetMemoryAttributesInMtrrSettings() to specify
+    ///                                  external scratch buffer.
+    ///
     pub fn mtrr_set_memory_attribute(
         &mut self,
         base_address: u64,
@@ -2305,9 +2199,9 @@ impl<H: HalTrait> MtrrLib<H> {
     }
 
     //
-    //  Worker function setting variable MTRRs
+    //  Function setting variable MTRRs
     //
-    //  @param[in]  VariableMtrrSettings   A buffer to hold variable MTRRs content.
+    //  @param  variable_mtrr_settings   A buffer to hold variable MTRRs content.
     //
     fn mtrr_set_variable_mtrr(&mut self, variable_mtrr_settings: &MtrrVariableSettings) {
         let variable_mtrr_ranges_count = self.get_variable_mtrr_count();
@@ -2323,9 +2217,9 @@ impl<H: HalTrait> MtrrLib<H> {
     }
 
     //
-    //  Worker function setting fixed MTRRs
+    //  Function setting fixed MTRRs
     //
-    //  @param[in]  FixedSettings  A buffer to hold fixed MTRRs content.
+    //  @param  fixed_settings  A buffer to hold fixed MTRRs content.
     //
     fn mtrr_set_fixed_mtrr(&mut self, fixed_settings: &MtrrFixedSettings) {
         for index in 0..MTRR_NUMBER_OF_FIXED_MTRR {
@@ -2335,13 +2229,11 @@ impl<H: HalTrait> MtrrLib<H> {
         }
     }
 
-    //
-    //  This function gets the content in all MTRRs (variable and fixed)
-    //
-    //  @param[out]  MtrrSetting  A buffer to hold all MTRRs content.
-    //
-    //  @retval the pointer of MtrrSetting
-    //
+    ///
+    ///  This function gets the content in all MTRRs (variable and fixed)
+    ///
+    ///  @retval MtrrSetting
+    ///
     pub fn mtrr_get_all_mtrrs(&self) -> MtrrSettings {
         // Initialize the MTRR settings
         let mut mtrr_setting = MtrrSettings::default();
@@ -2369,16 +2261,14 @@ impl<H: HalTrait> MtrrLib<H> {
         mtrr_setting
     }
 
-    //
-    //  This function sets all MTRRs includes Variable and Fixed.
-    //
-    //  The behavior of this function is to program everything in MtrrSetting to hardware.
-    //  MTRRs might not be enabled because the enable bit is clear in MtrrSetting->MtrrDefType.
-    //
-    //  @param[in]  MtrrSetting  A buffer holding all MTRRs content.
-    //
-    //  @retval The pointer of MtrrSetting
-    //
+    ///
+    ///  This function sets all MTRRs includes Variable and Fixed.
+    ///
+    ///  The behavior of this function is to program everything in mtrr_setting to hardware.
+    ///  MTRRs might not be enabled because the enable bit is clear in MtrrSetting->MtrrDefType.
+    ///
+    ///  @param  mtrr_setting  A buffer holding all MTRRs content.
+    ///
     pub fn mtrr_set_all_mtrrs(&mut self, mtrr_setting: &MtrrSettings) {
         let mut mtrr_context = MtrrContext::default();
 
@@ -2408,31 +2298,22 @@ impl<H: HalTrait> MtrrLib<H> {
         self.mtrr_lib_post_mtrr_change_enable_cache(&mtrr_context);
     }
 
-    //
-    //  Checks if MTRR is supported.
-    //
-    //  @retval TRUE  MTRR is supported.
-    //  @retval FALSE MTRR is not supported.
-    //
+    ///
+    ///  Checks if MTRR is supported.
+    ///
+    ///  @retval true  MTRR is supported.
+    ///  @retval false MTRR is not supported.
+    ///
     pub fn is_mtrr_supported(&self) -> bool {
         self.mtrr_lib_is_mtrr_supported_internal().is_ok()
     }
 
-    //
-    //  This function returns a Ranges array containing the memory cache types
-    //  of all memory addresses.
-    //
-    //  @param[in]      MtrrSetting  MTRR setting buffer to parse.
-    //  @param[out]     Ranges       Pointer to an array of MTRR_MEMORY_RANGE.
-    //  @param[in,out]  RangeCount   Count of MTRR_MEMORY_RANGE.
-    //                               On input, the maximum entries the Ranges can hold.
-    //                               On output, the actual entries that the function returns.
-    //
-    //  @retval RETURN_INVALID_PARAMETER RangeCount is NULL.
-    //  @retval RETURN_INVALID_PARAMETER *RangeCount is not 0 but Ranges is NULL.
-    //  @retval RETURN_BUFFER_TOO_SMALL  *RangeCount is too small.
-    //  @retval RETURN_SUCCESS           Ranges are successfully returned.
-    //
+    ///
+    ///  This function returns a Ranges array containing the memory cache types
+    ///  of all memory addresses.
+    ///
+    ///  @retval  ranges        A Vector of MtrrMemoryRange.
+    ///
     pub fn mtrr_get_memory_ranges(&self) -> MtrrResult<Vec<MtrrMemoryRange>> {
         let mut raw_variable_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_VARIABLE_MTRR] = Default::default();
         let mut all_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_LOCAL_MTRR_RANGES] =
@@ -2486,15 +2367,9 @@ impl<H: HalTrait> MtrrLib<H> {
         Ok(all_ranges[..all_range_count].to_vec())
     }
 
-    //
-    //  This function prints all MTRRs for debugging.
-    //
-    //  If MtrrSetting is not NULL, print MTRR settings from input MTRR
-    //  settings buffer.
-    //  If MtrrSetting is NULL, print MTRR settings from MTRRs.
-    //
-    //  @param  MtrrSetting    A buffer holding all MTRRs content.
-    //
+    ///
+    ///  This function prints all MTRRs for debugging.
+    ///
     #[cfg(test)]
     pub fn mtrr_debug_print_all_mtrrs(&self) {
         // Array of MTRR memory cache type short names
@@ -2559,11 +2434,11 @@ impl<H: HalTrait> MtrrLib<H> {
     }
 
     //
-    //  Few tests require reusing the hal passed to MtrrLib for validation
-    //  purposes towards the end of the tests. So this function basically
-    //  consumes the MtrrLib and returns the hal.
+    //  Few tests require reusing the hal object passed to MtrrLib for
+    //  validation purposes towards the end of the tests. So this function
+    //  basically consumes the MtrrLib and returns the hal.
     //
-    //  @return Firmware usable variable MTRR count
+    //  @retval Hal object
     //
     #[cfg(test)]
     pub(crate) fn mtrr_drop_hal(self) -> H {
@@ -2573,7 +2448,7 @@ impl<H: HalTrait> MtrrLib<H> {
     //
     //  Returns the firmware usable variable MTRR count for the CPU.
     //
-    //  @return Firmware usable variable MTRR count
+    //  @retval Firmware usable variable MTRR count
     //
     #[cfg(test)]
     pub(crate) fn get_firmware_usable_variable_mtrr_count(&self) -> u32 {
@@ -2598,11 +2473,11 @@ impl<H: HalTrait> MtrrLib<H> {
     //  This function shadows the content of variable MTRRs into an
     //  internal array: VariableMtrrRanges.
     //
-    //  @param[in]   MtrrValidBitsMask     The mask for the valid bit of the MTRR
-    //  @param[in]   MtrrValidAddressMask  The valid address mask for MTRR
-    //  @param[out]  VariableMtrrRanges          The array to shadow variable MTRRs content
+    //  @param  mtrr_valid_bits_mask     The mask for the valid bit of the MTRR
+    //  @param  mtrr_valid_address_mask  The valid address mask for MTRR
+    //  @param  variable_mtrr_ranges     A Vector of variable MTRRs content
     //
-    //  @return                       The return value of this parameter indicates the
+    //  @retval                       The return value of this parameter indicates the
     //                                number of MTRRs which has been used.
     //
     #[cfg(test)]
@@ -2649,6 +2524,10 @@ impl<H: HalTrait> MtrrLib<H> {
     }
 }
 
+///
+/// MTRR library constructor.
+/// This function creates a new MTRR library instance.
+///
 pub fn create_mtrr_lib() -> MtrrLib {
     let hal = Hal::new();
     MtrrLib::new(hal)

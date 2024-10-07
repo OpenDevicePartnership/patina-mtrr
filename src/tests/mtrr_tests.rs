@@ -25,13 +25,10 @@ use super::M_SYSTEM_PARAMETERS;
 //
 //  Compare the actual memory ranges against expected memory ranges and return PASS when they match.
 //
-//  @param ExpectedMemoryRanges     Expected memory ranges.
-//  @param ExpectedMemoryRangeCount Count of expected memory ranges.
-//  @param ActualRanges             Actual memory ranges.
-//  @param ActualRangeCount         Count of actual memory ranges.
-//
-//  @retval UNIT_TEST_PASSED  Test passed.
-//  @retval others            Test failed.
+//  @param expected_memory_ranges      Expected memory ranges.
+//  @param expected_memory_range_count Count of expected memory ranges.
+//  @param actual_ranges               Actual memory ranges.
+//  @param actual_range_count          Count of actual memory ranges.
 //
 fn verify_memory_ranges(
     expected_memory_ranges: &[MtrrMemoryRange],
@@ -51,8 +48,8 @@ fn verify_memory_ranges(
 //
 //  Dump the memory ranges.
 //
-//  @param Ranges       Memory ranges to dump.
-//  @param RangeCount   Count of memory ranges.
+//  @param ranges      Memory ranges to dump.
+//  @param range_count Count of memory ranges.
 //
 fn dump_memory_ranges(ranges: &[MtrrMemoryRange], range_count: usize) {
     for index in 0..range_count {
@@ -68,12 +65,12 @@ fn dump_memory_ranges(ranges: &[MtrrMemoryRange], range_count: usize) {
 //
 //  Generate random count of MTRRs for each cache type.
 //
-//  @param TotalCount Total MTRR count.
-//  @param UcCount    Return count of Uncacheable type.
-//  @param WtCount    Return count of Write Through type.
-//  @param WbCount    Return count of Write Back type.
-//  @param WpCount    Return count of Write Protected type.
-//  @param WcCount    Return count of Write Combining type.
+//  @param total_count Total MTRR count.
+//  @param uc_count    Return count of Uncacheable type.
+//  @param wt_count    Return count of Write Through type.
+//  @param wb_count    Return count of Write Back type.
+//  @param wp_count    Return count of Write Protected type.
+//  @param wc_count    Return count of Write Combining type.
 //
 fn generate_random_memory_type_combination(
     total_count: u32,
@@ -104,167 +101,6 @@ fn generate_random_memory_type_combination(
         total_mtrr_count, *uc_count, *wt_count, *wb_count, *wp_count, *wc_count
     );
 }
-
-//
-//  Unit test of MtrrLib service MtrrGetMemoryAttributesInMtrrSettings() and
-//  MtrrSetMemoryAttributesInMtrrSettings()
-//
-//  @param[in]  Context    Ignored
-//
-//  @retval  UNIT_TEST_PASSED             The Unit test has completed and the test
-//                                        case was successful.
-//  @retval  UNIT_TEST_ERROR_TEST_FAILED  A test case assertion has failed.
-//
-//
-// pub fn unit_test_mtrr_set_and_get_memory_attributes_in_mtrr_settings(system_parameter: &MtrrLibSystemParameter) {
-//     let system_parameter = system_parameter;
-//     let mut uc_count = 0;
-//     let mut wt_count = 0;
-//     let mut wb_count = 0;
-//     let mut wp_count = 0;
-//     let mut wc_count = 0;
-
-//     let mut mtrr_index;
-//     let mut scratch;
-//     let mut scratch_size;
-//     let mut local_mtrrs = MtrrSettings::default();
-
-//     let mut raw_mtrr_range = vec![MtrrMemoryRange::default(); MTRR_NUMBER_OF_VARIABLE_MTRR];
-//     let mut expected_memory_ranges =
-//         vec![
-//             MtrrMemoryRange::default();
-//             MTRR_NUMBER_OF_FIXED_MTRR * std::mem::size_of::<u64>() + 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 1
-//         ];
-//     let mut raw_mtrr_range_count;
-//     let mut expected_memory_ranges_count;
-
-//     let mut actual_memory_ranges =
-//         vec![
-//             MtrrMemoryRange::default();
-//             MTRR_NUMBER_OF_FIXED_MTRR * std::mem::size_of::<u64>() + 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 1
-//         ];
-//     let mut actual_variable_mtrr_usage;
-//     let mut actual_memory_ranges_count;
-
-//     let mut returned_memory_ranges =
-//         vec![
-//             MtrrMemoryRange::default();
-//             MTRR_NUMBER_OF_FIXED_MTRR * std::mem::size_of::<u64>() + 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 1
-//         ];
-//     let mut returned_memory_ranges_count;
-
-//     let mut mtrrs = vec![&mut local_mtrrs, &mut MtrrSettings::default()];
-
-//     generate_random_memory_type_combination(
-//         system_parameter.variable_mtrr_count - get_pcd_cpu_number_of_reserved_variable_mtrrs(),
-//         &mut uc_count,
-//         &mut wt_count,
-//         &mut wb_count,
-//         &mut wp_count,
-//         &mut wc_count,
-//     );
-//     generate_valid_and_configurable_mtrr_pairs(
-//         (system_parameter.physical_address_bits - system_parameter.mk_tme_keyid_bits) as u32,
-//         &mut raw_mtrr_range,
-//         uc_count,
-//         wt_count,
-//         wb_count,
-//         wp_count,
-//         wc_count,
-//     );
-
-//     raw_mtrr_range_count = uc_count + wt_count + wb_count + wp_count + wc_count;
-//     expected_memory_ranges_count = expected_memory_ranges.len();
-//     get_effective_memory_ranges(
-//         system_parameter.default_cache_type,
-//         (system_parameter.physical_address_bits - system_parameter.mk_tme_keyid_bits) as u32,
-//         &raw_mtrr_range,
-//         raw_mtrr_range_count as usize,
-//         &mut expected_memory_ranges,
-//         &mut expected_memory_ranges_count,
-//     );
-
-//     println!(
-//         "Total MTRR [{}]: UC={}, WT={}, WB={}, WP={}, WC={}",
-//         raw_mtrr_range_count, uc_count, wt_count, wb_count, wp_count, wc_count
-//     );
-//     println!("--- Expected Memory Ranges [{}] ---", expected_memory_ranges_count);
-//     dump_memory_ranges(&expected_memory_ranges, expected_memory_ranges_count);
-
-//     // Default cache type is always an INPUT
-//     local_mtrrs.mtrr_def_type_reg = mtrr_get_default_memory_type() as u64;
-//     scratch_size = SCRATCH_BUFFER_SIZE;
-//     mtrrs[0] = &mut local_mtrrs;
-//     mtrrs[1] = &mut MtrrSettings::default();
-
-//     for mtrr_index in 0..mtrrs.len() {
-//         scratch = vec![0u8; scratch_size];
-//         let mut status = mtrr_set_memory_attributes_in_mtrr_settings(
-//             Some(mtrrs[mtrr_index]),
-//             &mut scratch,
-//             &mut scratch_size,
-//             &expected_memory_ranges,
-//             expected_memory_ranges_count,
-//         );
-//         if status == RETURN_BUFFER_TOO_SMALL {
-//             scratch.resize(scratch_size, 0);
-//             println!("Not enough scratch space");
-//             status = mtrr_set_memory_attributes_in_mtrr_settings(
-//                 Some(mtrrs[mtrr_index]),
-//                 &mut scratch,
-//                 &mut scratch_size,
-//                 &expected_memory_ranges,
-//                 expected_memory_ranges_count,
-//             );
-//         }
-
-//         assert!(status.is_ok());
-
-//         if mtrrs[mtrr_index] == MtrrSettings::default() {
-//             local_mtrrs = MtrrSettings::default();
-//             mtrr_get_all_mtrrs(&mut local_mtrrs);
-//         }
-
-//         actual_memory_ranges_count = actual_memory_ranges.len();
-//         collect_test_result(
-//             system_parameter.default_cache_type,
-//             system_parameter.physical_address_bits - system_parameter.mk_tme_keyid_bits,
-//             system_parameter.variable_mtrr_count,
-//             &local_mtrrs,
-//             &mut actual_memory_ranges,
-//             &mut actual_memory_ranges_count,
-//             &mut actual_variable_mtrr_usage,
-//         );
-
-//         println!("--- Actual Memory Ranges [{}] ---", actual_memory_ranges_count);
-//         dump_memory_ranges(&actual_memory_ranges, actual_memory_ranges_count);
-//         verify_memory_ranges(
-//             &expected_memory_ranges,
-//             expected_memory_ranges_count,
-//             &actual_memory_ranges,
-//             actual_memory_ranges_count,
-//         );
-//         assert!(raw_mtrr_range_count >= actual_variable_mtrr_usage);
-
-//         returned_memory_ranges_count = returned_memory_ranges.len();
-//         status = mtrr_get_memory_ranges(
-//             mtrrs[mtrr_index],
-//             &mut returned_memory_ranges,
-//             &mut returned_memory_ranges_count,
-//         );
-//         assert!(status.is_ok());
-//         println!("--- Returned Memory Ranges [{}] ---", returned_memory_ranges_count);
-//         dump_memory_ranges(&returned_memory_ranges, returned_memory_ranges_count);
-//         verify_memory_ranges(
-//             &expected_memory_ranges,
-//             expected_memory_ranges_count,
-//             &returned_memory_ranges,
-//             returned_memory_ranges_count,
-//         );
-
-//         local_mtrrs = MtrrSettings::default();
-//     }
-// }
 
 fn set_randomly_generated_mtrr_settings(
     hal: &mut MockHal,
