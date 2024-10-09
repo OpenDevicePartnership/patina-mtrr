@@ -13,7 +13,7 @@
 //! # Getting Started
 //!
 //! ## Public API:
-//! ```ignore
+//!
 //! pub fn create_mtrr_lib(pcd_cpu_number_of_reserved_variable_mtrrs: u32) -> MtrrLib;
 //!
 //! pub fn is_mtrr_supported(&self) -> bool;
@@ -41,10 +41,13 @@
 //! ) -> MtrrResult<Vec<MtrrMemoryRange>>;
 //!
 //! pub fn mtrr_debug_print_all_mtrrs(&self);
-//! ```
+//!
 //!
 //! ## API usage:
-//! ```ignore
+//! ```no_run
+//! use mtrr::mtrr::create_mtrr_lib;
+//! use mtrr::structs::MtrrMemoryCacheType;
+//!
 //! fn mtrr_lib_usage() {
 //!     // Create MTRR library
 //!     let mut mtrrlib = create_mtrr_lib(0);
@@ -107,8 +110,7 @@
 //!     // UC:0x000000b0000000-0x000000ffffffff
 //!     // WB:0x00000100000000-0x00003fffffffff
 //! }
-//!
-//! ```
+//!```
 
 // Below clippy override is enforced to match the Rust code with the C MtrrLib
 // implementation
