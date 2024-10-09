@@ -4,54 +4,56 @@ MTRR(Memory Type Range Registers) Lib helps program MTRRs on x86_64
 architecture.
 
 MTRR is a set of processor MSRs that store memory type information used to
-control memory caching policies. MTRRs are used to specify the memory type
+control memory caching policies. MTRRs are used to specify the cache type
 for a range of physical memory addresses. The memory type determines whether
 the processor caches reads and writes to that range of memory and whether
 the memory is write-back or write-through etc. MTRRs are described in 7.7
 Vol 2 of AMD64 Architecture Programmer's Manual and 12.11 Vol 3A of Intel
 Software Developers Manual
 
-# Getting Started
+## Getting Started
 
-## Public API:
+### Public API
+
 ```rust
 pub fn create_mtrr_lib(pcd_cpu_number_of_reserved_variable_mtrrs: u32) -> MtrrLib;
 
-pub fn is_mtrr_supported(&self) -> bool;
+pub fn is_supported(&self) -> bool;
 
-pub fn mtrr_get_all_mtrrs(&self) -> MtrrSettings;
+pub fn get_all_mtrrs(&self) -> MtrrSettings;
 
-pub fn mtrr_set_all_mtrrs(&mut self, mtrr_setting: &MtrrSettings);
+pub fn set_all_mtrrs(&mut self, mtrr_setting: &MtrrSettings);
 
-pub fn mtrr_get_memory_attribute(&self, address: u64) -> MtrrMemoryCacheType;
+pub fn get_memory_attribute(&self, address: u64) -> MtrrMemoryCacheType;
 
-pub fn mtrr_set_memory_attribute(
+pub fn set_memory_attribute(
     &mut self,
     base_address: u64,
     length: u64,
     attribute: MtrrMemoryCacheType,
 ) -> MtrrResult<()>;
 
-pub fn mtrr_set_memory_attributes(
+pub fn set_memory_attributes(
     &mut self,
     ranges: &[MtrrMemoryRange],
 ) -> MtrrResult<()>;
 
-pub fn mtrr_get_memory_ranges(
+pub fn get_memory_ranges(
     &self
 ) -> MtrrResult<Vec<MtrrMemoryRange>>;
 
-pub fn mtrr_debug_print_all_mtrrs(&self);
+pub fn debug_print_all_mtrrs(&self);
 ```
 
-## API usage:
+### API usage
+
 ```rust
 fn mtrr_lib_usage() {
     // Create MTRR library
     let mut mtrrlib = create_mtrr_lib(0);
 
     // Get the current MTRR settings
-    let mut mtrr_settings = mtrrlib.mtrr_get_all_mtrrs();
+    let mut mtrr_settings = mtrrlib.get_all_mtrrs();
 
     // Set default mem type to WriteBack and appropriately update the fixed mtrr
     mtrr_settings.mtrr_def_type_reg.set_mem_type(MtrrMemoryCacheType::WriteBack as u8);
@@ -60,7 +62,7 @@ fn mtrr_lib_usage() {
     }
 
     // Set the MTRR settings
-    mtrrlib.mtrr_set_all_mtrrs(&mtrr_settings);
+    mtrrlib.set_all_mtrrs(&mtrr_settings);
 
     const BASE_128KB: u64 = 0x00020000;
     const BASE_512KB: u64 = 0x00080000;
@@ -70,7 +72,7 @@ fn mtrr_lib_usage() {
     //
     // Set memory range from 640KB to 1MB to uncacheable
     //
-    let status = mtrrlib.mtrr_set_memory_attribute(
+    let status = mtrrlib.set_memory_attribute(
         BASE_512KB + BASE_128KB,
         BASE_1MB - (BASE_512KB + BASE_128KB),
         MtrrMemoryCacheType::Uncacheable,
@@ -81,7 +83,7 @@ fn mtrr_lib_usage() {
     // Set the memory range from the start of the 32-bit MMIO area (32-bit PCI
     // MMIO aperture on i440fx, PCIEXBAR on q35) to 4GB as uncacheable.
     //
-    let status = mtrrlib.mtrr_set_memory_attribute(0xB0000000, BASE_4GB - 0xB0000000, MtrrMemoryCacheType::Uncacheable);
+    let status = mtrrlib.set_memory_attribute(0xB0000000, BASE_4GB - 0xB0000000, MtrrMemoryCacheType::Uncacheable);
     assert!(status.is_ok());
 
     // MTRR Settings:

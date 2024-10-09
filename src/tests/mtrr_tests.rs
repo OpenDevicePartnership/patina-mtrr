@@ -149,7 +149,7 @@ fn unit_test_is_mtrr_supported() {
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal, 0);
-    assert!(!mtrrlib.is_mtrr_supported());
+    assert!(!mtrrlib.is_supported());
 
     // MTRR capability on in CPUID leaf, but no variable or fixed MTRRs.
     system_parameter.mtrr_supported = true;
@@ -158,7 +158,7 @@ fn unit_test_is_mtrr_supported() {
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal, 0);
-    assert!(!mtrrlib.is_mtrr_supported());
+    assert!(!mtrrlib.is_supported());
 
     // MTRR capability on in CPUID leaf, but no variable MTRRs.
     system_parameter.mtrr_supported = true;
@@ -167,7 +167,7 @@ fn unit_test_is_mtrr_supported() {
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal, 0);
-    assert!(mtrrlib.is_mtrr_supported());
+    assert!(mtrrlib.is_supported());
 
     // MTRR capability on in CPUID leaf, but no fixed MTRRs.
     system_parameter.mtrr_supported = true;
@@ -176,7 +176,7 @@ fn unit_test_is_mtrr_supported() {
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal, 0);
-    assert!(mtrrlib.is_mtrr_supported());
+    assert!(mtrrlib.is_supported());
 
     // MTRR capability on in CPUID leaf with both variable and fixed MTRRs.
     system_parameter.mtrr_supported = true;
@@ -185,7 +185,7 @@ fn unit_test_is_mtrr_supported() {
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal, 0);
-    assert!(mtrrlib.is_mtrr_supported());
+    assert!(mtrrlib.is_supported());
 }
 
 #[test]
@@ -357,7 +357,7 @@ fn unit_test_mtrr_get_all_mtrrs() {
     expected_mtrr_settings.mtrr_def_type_reg = MsrIa32MtrrDefType::default().with_e(true).with_fe(false);
     set_randomly_generated_mtrr_settings(&mut hal, &system_parameter, &mut expected_mtrr_settings);
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal, 0);
-    let mtrr_settings = mtrrlib.mtrr_get_all_mtrrs();
+    let mtrr_settings = mtrrlib.get_all_mtrrs();
     assert!(mtrr_settings.fixed == expected_mtrr_settings.fixed);
     assert!(mtrr_settings.variables == expected_mtrr_settings.variables);
 
@@ -370,7 +370,7 @@ fn unit_test_mtrr_get_all_mtrrs() {
     expected_mtrr_settings.mtrr_def_type_reg = MsrIa32MtrrDefType::default().with_e(true).with_fe(true);
     set_randomly_generated_mtrr_settings(&mut hal, &system_parameter, &mut expected_mtrr_settings);
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal, 0);
-    let mtrr_settings = mtrrlib.mtrr_get_all_mtrrs();
+    let mtrr_settings = mtrrlib.get_all_mtrrs();
     assert!(mtrr_settings.fixed == expected_mtrr_settings.fixed);
     assert!(mtrr_settings.variables == expected_mtrr_settings.variables);
 
@@ -383,7 +383,7 @@ fn unit_test_mtrr_get_all_mtrrs() {
     expected_mtrr_settings.mtrr_def_type_reg = MsrIa32MtrrDefType::default().with_e(true).with_fe(true);
     // set_randomly_generated_mtrr_settings(&mut hal, &system_parameter, &mut expected_mtrr_settings);
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal, 0);
-    let mtrr_settings = mtrrlib.mtrr_get_all_mtrrs();
+    let mtrr_settings = mtrrlib.get_all_mtrrs();
     assert!(mtrr_settings.fixed == expected_mtrr_settings.fixed);
     assert!(mtrr_settings.variables == expected_mtrr_settings.variables);
 
@@ -394,7 +394,7 @@ fn unit_test_mtrr_get_all_mtrrs() {
         let mut hal = MockHal::new();
         hal.initialize_mtrr_regs(&system_parameter);
         let mtrrlib = create_mtrr_lib_with_mock_hal(hal, 0);
-        let _ = mtrrlib.mtrr_get_all_mtrrs();
+        let _ = mtrrlib.get_all_mtrrs();
     });
 }
 
@@ -435,7 +435,7 @@ fn unit_test_mtrr_set_all_mtrrs() {
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
     let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal, 0);
-    mtrrlib.mtrr_set_all_mtrrs(&expected_mtrr_settings);
+    mtrrlib.set_all_mtrrs(&expected_mtrr_settings);
 
     // we need access the hal to cross verify the MSR values. Hence we need to
     // drop it from mtrrlib
@@ -617,7 +617,7 @@ fn unit_test_invalid_memory_layouts_impl(system_parameter: &MtrrLibSystemParamet
         ranges[index as usize].length = length;
         ranges[index as usize].mem_type = generate_random_cache_type();
 
-        let status = mtrrlib.mtrr_set_memory_attribute(
+        let status = mtrrlib.set_memory_attribute(
             ranges[index as usize].base_address,
             ranges[index as usize].length,
             ranges[index as usize].mem_type,
@@ -626,7 +626,7 @@ fn unit_test_invalid_memory_layouts_impl(system_parameter: &MtrrLibSystemParamet
     }
 
     for range in &ranges {
-        let status = mtrrlib.mtrr_set_memory_attribute(range.base_address, range.length, range.mem_type);
+        let status = mtrrlib.set_memory_attribute(range.base_address, range.length, range.mem_type);
         assert!(status.is_err());
     }
 }
@@ -756,14 +756,14 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_setti
 
     let mtrr_setting =
         MtrrSettings::new(MtrrFixedSettings::default(), MtrrVariableSettings::default(), default_mem_type_reg);
-    mtrrlib.mtrr_set_all_mtrrs(&mtrr_setting);
+    mtrrlib.set_all_mtrrs(&mtrr_setting);
     for index in 0..expected_memory_ranges_count {
         println!("--------------------------------------------------");
         println!("--------------------------------------------------");
-        println!("{} calling mtrr_set_memory_attribute", index);
+        println!("{} calling set_memory_attribute", index);
 
         // println!("Before: \n{}", mtrr_setting);
-        status = mtrrlib.mtrr_set_memory_attribute(
+        status = mtrrlib.set_memory_attribute(
             expected_memory_ranges[index].base_address,
             expected_memory_ranges[index].length,
             expected_memory_ranges[index].mem_type,
@@ -776,7 +776,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_setti
     }
 
     actual_memory_ranges_count = actual_memory_ranges.len();
-    let mtrr_setting = mtrrlib.mtrr_get_all_mtrrs();
+    let mtrr_setting = mtrrlib.get_all_mtrrs();
     collect_test_result(
         system_parameter.default_cache_type,
         system_parameter.physical_address_bits as u32 - system_parameter.mk_tme_keyid_bits as u32,
@@ -802,7 +802,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_setti
     );
     assert!(raw_mtrr_range_count >= actual_variable_mtrr_usage);
 
-    let returned_memory_ranges = mtrrlib.mtrr_get_memory_ranges();
+    let returned_memory_ranges = mtrrlib.get_memory_ranges();
     assert!(returned_memory_ranges.is_ok());
     let returned_memory_ranges = returned_memory_ranges.unwrap();
     println!("--- Returned Memory Ranges [{}] ---", returned_memory_ranges.len());
@@ -909,10 +909,10 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr
     for index in 0..expected_memory_ranges_count {
         println!("--------------------------------------------------");
         println!("--------------------------------------------------");
-        println!("{} calling mtrr_set_memory_attribute", index);
+        println!("{} calling set_memory_attribute", index);
 
         // println!("Before: \n{}", mtrr_setting);
-        status = mtrrlib.mtrr_set_memory_attribute(
+        status = mtrrlib.set_memory_attribute(
             expected_memory_ranges[index].base_address,
             expected_memory_ranges[index].length,
             expected_memory_ranges[index].mem_type,
@@ -924,7 +924,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr
         }
     }
 
-    let mtrr_setting = mtrrlib.mtrr_get_all_mtrrs();
+    let mtrr_setting = mtrrlib.get_all_mtrrs();
 
     actual_memory_ranges_count = actual_memory_ranges.len();
     collect_test_result(
@@ -951,7 +951,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr
     );
     assert!(raw_mtrr_range_count >= actual_variable_mtrr_usage);
 
-    let returned_memory_ranges = mtrrlib.mtrr_get_memory_ranges();
+    let returned_memory_ranges = mtrrlib.get_memory_ranges();
     assert!(returned_memory_ranges.is_ok());
     let returned_memory_ranges = returned_memory_ranges.unwrap();
     println!("--- Returned Memory Ranges [{}] ---", returned_memory_ranges.len());
@@ -979,28 +979,28 @@ fn unit_test_mtrr_lib_usage() {
     let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal, 0);
 
     // Get the current MTRR settings
-    let mut mtrr_settings = mtrrlib.mtrr_get_all_mtrrs();
+    let mut mtrr_settings = mtrrlib.get_all_mtrrs();
     for index in 0..mtrr_settings.fixed.mtrr.len() {
         mtrr_settings.fixed.mtrr[index] = 0x0606060606060606;
     }
     mtrr_settings.mtrr_def_type_reg.set_mem_type(MtrrMemoryCacheType::WriteBack as u8);
 
     // Set the MTRR settings
-    mtrrlib.mtrr_set_all_mtrrs(&mtrr_settings);
+    mtrrlib.set_all_mtrrs(&mtrr_settings);
 
     const BASE_128KB: u64 = 0x00020000;
     const BASE_512KB: u64 = 0x00080000;
     const BASE_1MB: u64 = 0x00100000;
     const BASE_4GB: u64 = 0x0000000100000000;
 
-    let status = mtrrlib.mtrr_set_memory_attribute(
+    let status = mtrrlib.set_memory_attribute(
         BASE_512KB + BASE_128KB,
         BASE_1MB - (BASE_512KB + BASE_128KB),
         MtrrMemoryCacheType::Uncacheable,
     );
     assert!(status.is_ok());
 
-    let status = mtrrlib.mtrr_set_memory_attribute(0xB0000000, BASE_4GB - 0xB0000000, MtrrMemoryCacheType::Uncacheable);
+    let status = mtrrlib.set_memory_attribute(0xB0000000, BASE_4GB - 0xB0000000, MtrrMemoryCacheType::Uncacheable);
     assert!(status.is_ok());
 
     // MTRR Settings:
