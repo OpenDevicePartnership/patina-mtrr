@@ -1663,11 +1663,7 @@ impl<H: HalTrait> MtrrLib<H> {
         // }
 
         // 1. Validate the parameters
-        let Ok((fixed_mtrr_supported, original_variable_mtrr_ranges_count)) =
-            self.mtrr_lib_is_mtrr_supported_internal()
-        else {
-            return Err(MtrrError::Unsupported);
-        };
+        let (fixed_mtrr_supported, original_variable_mtrr_ranges_count) = self.mtrr_lib_is_mtrr_supported_internal()?;
 
         let fixed_mtrr_memory_limit = if fixed_mtrr_supported { SIZE_1MB as u64 } else { 0 };
 
@@ -1680,7 +1676,7 @@ impl<H: HalTrait> MtrrLib<H> {
                 || ((ranges[index].base_address + ranges[index].length) & !mtrr_valid_address_mask) != 0
                     && (ranges[index].base_address + ranges[index].length) != mtrr_valid_bits_mask + 1
             {
-                return Err(MtrrError::Unsupported);
+                return Err(MtrrError::InvalidParameter);
             }
 
             if !matches!(
