@@ -1,5 +1,5 @@
 use crate::{
-    hal::HalTrait,
+    hal::Hal,
     structs::{
         MsrIa32MtrrDefType, MsrIa32MtrrPhysbaseRegister, MsrIa32MtrrPhysmaskRegister, MtrrFixedSettings,
         MtrrMemoryCacheType, MtrrMemoryRange, MtrrSettings, MtrrVariableSetting, MtrrVariableSettings,

@@ -6,9 +6,10 @@ use core::arch::x86_64::__cpuid_count;
 
 /// HAL trait for MTRR Lib - This trait is used to abstract the hardware access
 /// layer for MTRR Lib. The reason for this, to make MTRR lib code unit testable
-/// by plugging in a mock HAL. `struct Hal` implements the real operations where
-/// as `struct MockHal` in `tests\mock_hal.rs` implements a mock version of it.
-pub trait HalTrait {
+/// by plugging in a mock HAL. `struct X64Hal` implements the real operations
+/// where as `struct MockHal` in `tests\mock_hal.rs` implements a mock version
+/// of it.
+pub trait Hal {
     fn save_and_disable_interrupts(&mut self) -> bool;
     fn enable_interrupts(&mut self);
     fn disable_interrupts(&mut self);
@@ -28,21 +29,21 @@ pub trait HalTrait {
     fn asm_cpuid_ex(&self, function: u32, sub_function: u32) -> CpuidResult;
 }
 
-pub struct Hal;
+pub struct X64Hal;
 
-impl Hal {
+impl X64Hal {
     pub fn new() -> Self {
         Self
     }
 }
 
-impl Default for Hal {
+impl Default for X64Hal {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl HalTrait for Hal {
+impl Hal for X64Hal {
     fn save_and_disable_interrupts(&mut self) -> bool {
         let interrupt_state = self.get_interrupt_state();
         self.disable_interrupts();

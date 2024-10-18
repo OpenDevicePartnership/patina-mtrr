@@ -3,8 +3,8 @@
 #![allow(clippy::needless_range_loop)]
 use crate::error::MtrrError;
 use crate::error::MtrrResult;
+use crate::hal::X64Hal;
 use crate::hal::Hal;
-use crate::hal::HalTrait;
 use crate::structs::CpuidStructuredExtendedFeatureFlagsEcx;
 use crate::structs::CpuidVirPhyAddressSizeEax;
 use crate::structs::MsrIa32MtrrDefType;
@@ -59,12 +59,12 @@ fn o(start: u16, index: u16, vertex_count: u16) -> usize {
     (index as usize) * vertex_count as usize + (start as usize)
 }
 
-pub struct MtrrLib<H: HalTrait = Hal> {
+pub struct MtrrLib<H: Hal = X64Hal> {
     hal: H,
     pcd_cpu_number_of_reserved_variable_mtrrs: u32,
 }
 
-impl<H: HalTrait> MtrrLib<H> {
+impl<H: Hal> MtrrLib<H> {
     pub(crate) fn new(hal: H, pcd_cpu_number_of_reserved_variable_mtrrs: u32) -> Self {
         Self { hal, pcd_cpu_number_of_reserved_variable_mtrrs }
     }
@@ -2213,6 +2213,6 @@ impl<H: HalTrait> MtrrLib<H> {
 /// MTRR library constructor.
 /// This function creates a new MTRR library instance.
 pub fn create_mtrr_lib(pcd_cpu_number_of_reserved_variable_mtrrs: u32) -> MtrrLib {
-    let hal = Hal::new();
+    let hal = X64Hal::new();
     MtrrLib::new(hal, pcd_cpu_number_of_reserved_variable_mtrrs)
 }

@@ -2,7 +2,7 @@
 use core::arch::asm;
 use core::arch::x86_64::CpuidResult;
 
-use crate::hal::HalTrait;
+use crate::hal::Hal;
 use crate::mtrr::MtrrLib;
 use crate::structs::CpuidStructuredExtendedFeatureFlagsEcx;
 use crate::structs::CpuidVersionInfoEdx;
@@ -94,7 +94,7 @@ impl MockHal {
     }
 }
 
-impl HalTrait for MockHal {
+impl Hal for MockHal {
     fn save_and_disable_interrupts(&mut self) -> bool {
         let interrupt_state = self.get_interrupt_state();
         self.disable_interrupts();
