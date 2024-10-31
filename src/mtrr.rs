@@ -3,8 +3,8 @@
 #![allow(clippy::needless_range_loop)]
 use crate::error::MtrrError;
 use crate::error::MtrrResult;
-use crate::hal::X64Hal;
 use crate::hal::Hal;
+use crate::hal::X64Hal;
 use crate::structs::CpuidStructuredExtendedFeatureFlagsEcx;
 use crate::structs::CpuidVirPhyAddressSizeEax;
 use crate::structs::MsrIa32MtrrDefType;
@@ -44,6 +44,7 @@ use crate::utils::is_pow2;
 use crate::utils::lshift_u64;
 use crate::utils::mult_u64x32;
 use crate::utils::rshift_u64;
+use crate::Mtrr;
 use alloc::vec::Vec;
 use core::mem::size_of;
 use core::ptr::write_bytes;
@@ -97,7 +98,7 @@ impl<H: Hal> MtrrLib<H> {
 
     //  Returns the variable MTRR count for the CPU.
     pub(crate) fn get_variable_mtrr_count(&self) -> u32 {
-        if !self.is_supported() {
+        if !self.is_supported_impl() {
             return 0;
         }
 
@@ -115,7 +116,7 @@ impl<H: Hal> MtrrLib<H> {
 
     ///  Returns the default MTRR cache type for the system.
     pub fn mtrr_get_default_memory_type(&self) -> MtrrMemoryCacheType {
-        if !self.is_supported() {
+        if !self.is_supported_impl() {
             return MtrrMemoryCacheType::Uncacheable;
         }
 
@@ -192,7 +193,7 @@ impl<H: Hal> MtrrLib<H> {
     pub(crate) fn mtrr_get_fixed_mtrr(&self) -> MtrrFixedSettings {
         let mut fixed_settings = MtrrFixedSettings::default();
 
-        if !self.is_supported() {
+        if !self.is_supported_impl() {
             return fixed_settings;
         }
 
@@ -500,8 +501,8 @@ impl<H: Hal> MtrrLib<H> {
     /// This function is mainly for debug purpose.
     ///
     /// - `address` -  The specific address
-    pub fn get_memory_attribute(&self, address: u64) -> MtrrMemoryCacheType {
-        if !self.is_supported() {
+    pub fn get_memory_attribute_impl(&self, address: u64) -> MtrrMemoryCacheType {
+        if !self.is_supported_impl() {
             return MtrrMemoryCacheType::Uncacheable;
         }
 
@@ -1880,7 +1881,7 @@ impl<H: Hal> MtrrLib<H> {
 
         // 6. Dump the MTRR settings for debugging
         #[cfg(test)]
-        self.debug_print_all_mtrrs();
+        self.debug_print_all_mtrrs_impl();
 
         Ok(())
     }
@@ -1888,7 +1889,7 @@ impl<H: Hal> MtrrLib<H> {
     ///  This function attempts to set the attributes for a set of memory ranges.
     ///
     ///  - `ranges` -  The physical memory ranges
-    pub fn set_memory_attributes(&mut self, ranges: &[MtrrMemoryRange]) -> MtrrResult<()> {
+    pub fn set_memory_attributes_impl(&mut self, ranges: &[MtrrMemoryRange]) -> MtrrResult<()> {
         let mut scratch: [u8; SCRATCH_BUFFER_SIZE] = [0; SCRATCH_BUFFER_SIZE];
         let mut scratch_size = scratch.len();
 
@@ -1902,7 +1903,7 @@ impl<H: Hal> MtrrLib<H> {
     ///  - `length` -              The size in bytes of the memory range.
     ///  - `attributes` -          The bit mask of attributes to set for the
     ///                                 memory range.
-    pub fn set_memory_attribute(
+    pub fn set_memory_attribute_impl(
         &mut self,
         base_address: u64,
         length: u64,
@@ -1944,7 +1945,7 @@ impl<H: Hal> MtrrLib<H> {
     }
 
     ///  This function gets the content in all MTRRs (variable and fixed)
-    pub fn get_all_mtrrs(&self) -> MtrrSettings {
+    pub fn get_all_mtrrs_impl(&self) -> MtrrSettings {
         // Initialize the MTRR settings
         let mut mtrr_setting = MtrrSettings::default();
 
@@ -1977,7 +1978,7 @@ impl<H: Hal> MtrrLib<H> {
     ///  MTRRs might not be enabled because the enable bit is clear in MtrrSetting->MtrrDefType.
     ///
     ///  - `mtrr_setting` -  A buffer holding all MTRRs content.
-    pub fn set_all_mtrrs(&mut self, mtrr_setting: &MtrrSettings) {
+    pub fn set_all_mtrrs_impl(&mut self, mtrr_setting: &MtrrSettings) {
         let mut mtrr_context = MtrrContext::default();
 
         // Check if MTRR is supported
@@ -2007,13 +2008,13 @@ impl<H: Hal> MtrrLib<H> {
     }
 
     ///  Checks if MTRR is supported.
-    pub fn is_supported(&self) -> bool {
+    pub fn is_supported_impl(&self) -> bool {
         self.mtrr_lib_is_mtrr_supported_internal().is_ok()
     }
 
     ///  This function returns a Ranges array containing the memory cache types
     ///  of all memory addresses.
-    pub fn get_memory_ranges(&self) -> MtrrResult<Vec<MtrrMemoryRange>> {
+    pub fn get_memory_ranges_impl(&self) -> MtrrResult<Vec<MtrrMemoryRange>> {
         let mut raw_variable_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_VARIABLE_MTRR] = Default::default();
         let mut all_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_LOCAL_MTRR_RANGES] =
             [MtrrMemoryRange::default(); MTRR_NUMBER_OF_LOCAL_MTRR_RANGES];
@@ -2021,7 +2022,7 @@ impl<H: Hal> MtrrLib<H> {
         let mut all_range_count = 1;
 
         // Determine the MTRR settings to use
-        let mtrrs = self.get_all_mtrrs();
+        let mtrrs = self.get_all_mtrrs_impl();
 
         // Initialize the MTRR masks
         let (mtrr_valid_bits_mask, mtrr_valid_address_mask) = self.mtrr_lib_initialize_mtrr_mask();
@@ -2068,7 +2069,7 @@ impl<H: Hal> MtrrLib<H> {
 
     ///  This function prints all MTRRs for debugging.
     #[cfg(test)]
-    pub fn debug_print_all_mtrrs(&self) {
+    pub fn debug_print_all_mtrrs_impl(&self) {
         // Array of MTRR memory cache type short names
         const MMTRR_MEMORY_CACHE_TYPE_SHORT_NAME: [&str; 8] = [
             "UC", // CacheUncacheable
@@ -2084,9 +2085,9 @@ impl<H: Hal> MtrrLib<H> {
         let mut contain_variable_mtrr = false;
 
         // Determine which MTRR settings to use
-        let mtrrs = self.get_all_mtrrs();
+        let mtrrs = self.get_all_mtrrs_impl();
 
-        let Ok(ranges) = self.get_memory_ranges() else {
+        let Ok(ranges) = self.get_memory_ranges_impl() else {
             return;
         };
 
@@ -2143,7 +2144,7 @@ impl<H: Hal> MtrrLib<H> {
     //  @retval Firmware usable variable MTRR count
     #[cfg(test)]
     pub(crate) fn get_firmware_usable_variable_mtrr_count(&self) -> u32 {
-        if !self.is_supported() {
+        if !self.is_supported_impl() {
             return 0;
         }
 
@@ -2175,7 +2176,7 @@ impl<H: Hal> MtrrLib<H> {
         let mut variable_mtrr_ranges: Vec<VariableMtrr> = Vec::new();
 
         // Check if MTRR is supported
-        if !self.is_supported() {
+        if !self.is_supported_impl() {
             return variable_mtrr_ranges;
         }
 
@@ -2210,9 +2211,42 @@ impl<H: Hal> MtrrLib<H> {
     }
 }
 
-/// MTRR library constructor.
-/// This function creates a new MTRR library instance.
-pub fn create_mtrr_lib(pcd_cpu_number_of_reserved_variable_mtrrs: u32) -> MtrrLib {
-    let hal = X64Hal::new();
-    MtrrLib::new(hal, pcd_cpu_number_of_reserved_variable_mtrrs)
+impl<H: Hal> Mtrr for MtrrLib<H> {
+    fn set_memory_attributes(&mut self, ranges: &[MtrrMemoryRange]) -> MtrrResult<()> {
+        self.set_memory_attributes_impl(ranges)
+    }
+
+    fn set_memory_attribute(
+        &mut self,
+        base_address: u64,
+        length: u64,
+        attribute: MtrrMemoryCacheType,
+    ) -> MtrrResult<()> {
+        self.set_memory_attribute_impl(base_address, length, attribute)
+    }
+
+    fn get_all_mtrrs(&self) -> MtrrSettings {
+        self.get_all_mtrrs_impl()
+    }
+
+    fn set_all_mtrrs(&mut self, mtrr_setting: &MtrrSettings) {
+        self.set_all_mtrrs_impl(mtrr_setting)
+    }
+
+    fn is_supported(&self) -> bool {
+        self.is_supported_impl()
+    }
+
+    fn get_memory_ranges(&self) -> MtrrResult<Vec<MtrrMemoryRange>> {
+        self.get_memory_ranges_impl()
+    }
+
+    fn get_memory_attribute(&self, address: u64) -> crate::structs::MtrrMemoryCacheType {
+        self.get_memory_attribute_impl(address)
+    }
+
+    fn debug_print_all_mtrrs(&self) {
+        #[cfg(test)]
+        self.debug_print_all_mtrrs_impl()
+    }
 }

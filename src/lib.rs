@@ -14,38 +14,40 @@
 //!
 //! ## Public API:
 //! ```ignore
-//! pub fn create_mtrr_lib(pcd_cpu_number_of_reserved_variable_mtrrs: u32) -> MtrrLib;
+//! pub fn create_mtrr_lib(pcd_cpu_number_of_reserved_variable_mtrrs: u32) -> Box<dyn Mtrr>;
 //!
-//! pub fn is_supported(&self) -> bool;
+//! pub trait Mtrr {
+//!     pub fn is_supported(&self) -> bool;
 //!
-//! pub fn get_all_mtrrs(&self) -> MtrrSettings;
+//!     pub fn get_all_mtrrs(&self) -> MtrrSettings;
 //!
-//! pub fn set_all_mtrrs(&mut self, mtrr_setting: &MtrrSettings);
+//!     pub fn set_all_mtrrs(&mut self, mtrr_setting: &MtrrSettings);
 //!
-//! pub fn get_memory_attribute(&self, address: u64) -> MtrrMemoryCacheType;
+//!     pub fn get_memory_attribute(&self, address: u64) -> MtrrMemoryCacheType;
 //!
-//! pub fn set_memory_attribute(
-//!     &mut self,
-//!     base_address: u64,
-//!     length: u64,
-//!     attribute: MtrrMemoryCacheType,
-//! ) -> MtrrResult<()>;
+//!     pub fn set_memory_attribute(
+//!         &mut self,
+//!         base_address: u64,
+//!         length: u64,
+//!         attribute: MtrrMemoryCacheType,
+//!     ) -> MtrrResult<()>;
 //!
-//! pub fn set_memory_attributes(
-//!     &mut self,
-//!     ranges: &[MtrrMemoryRange],
-//! ) -> MtrrResult<()>;
+//!     pub fn set_memory_attributes(
+//!         &mut self,
+//!         ranges: &[MtrrMemoryRange],
+//!     ) -> MtrrResult<()>;
 //!
-//! pub fn get_memory_ranges(
-//!     &self
-//! ) -> MtrrResult<Vec<MtrrMemoryRange>>;
+//!     pub fn get_memory_ranges(
+//!         &self
+//!     ) -> MtrrResult<Vec<MtrrMemoryRange>>;
 //!
-//! pub fn debug_print_all_mtrrs(&self);
+//!     pub fn debug_print_all_mtrrs(&self);
+//! }
 //!```
 //!
 //! ## API usage:
 //! ```no_run
-//! use mtrr::mtrr::create_mtrr_lib;
+//! use mtrr::create_mtrr_lib;
 //! use mtrr::structs::MtrrMemoryCacheType;
 //!
 //! fn mtrr_lib_usage() {
@@ -114,12 +116,40 @@
 
 #![cfg_attr(all(not(feature = "std"), not(test)), no_std)]
 extern crate alloc;
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+use hal::X64Hal;
+use mtrr::MtrrLib;
 pub mod error;
 pub mod mtrr;
 pub mod structs;
 mod utils;
 
 mod hal;
+
+pub trait Mtrr {
+    fn is_supported(&self) -> bool;
+    fn get_all_mtrrs(&self) -> structs::MtrrSettings;
+    fn set_all_mtrrs(&mut self, mtrr_setting: &structs::MtrrSettings);
+    fn get_memory_attribute(&self, address: u64) -> structs::MtrrMemoryCacheType;
+    fn set_memory_attribute(
+        &mut self,
+        base_address: u64,
+        length: u64,
+        attribute: structs::MtrrMemoryCacheType,
+    ) -> Result<(), error::MtrrError>;
+    fn set_memory_attributes(&mut self, ranges: &[structs::MtrrMemoryRange]) -> Result<(), error::MtrrError>;
+    fn get_memory_ranges(&self) -> Result<Vec<structs::MtrrMemoryRange>, error::MtrrError>;
+
+    fn debug_print_all_mtrrs(&self);
+}
+
+/// MTRR library constructor.
+/// This function creates a new MTRR trait instance.
+pub fn create_mtrr_lib(pcd_cpu_number_of_reserved_variable_mtrrs: u32) -> Box<dyn Mtrr> {
+    let hal = X64Hal::new();
+    Box::new(MtrrLib::new(hal, pcd_cpu_number_of_reserved_variable_mtrrs))
+}
 
 #[cfg(test)]
 mod tests;
