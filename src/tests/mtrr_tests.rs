@@ -20,6 +20,7 @@ use crate::{
 use rand::random;
 use std::{panic, u32};
 
+use crate::Mtrr;
 use super::M_SYSTEM_PARAMETERS;
 
 //

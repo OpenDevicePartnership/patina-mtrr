@@ -276,3 +276,9 @@ pub fn create_mtrr_lib_with_mock_hal(hal: MockHal, pcd_cpu_number_of_reserved_va
     let mtrr_lib = MtrrLib::new(hal, pcd_cpu_number_of_reserved_variable_mtrrs);
     mtrr_lib
 }
+
+// pub fn create_mtrr_lib_with_mock_hal(hal: MockHal, pcd_cpu_number_of_reserved_variable_mtrrs: u32) -> MtrrLib<MockHal> {
+//     let mtrr_lib = MtrrLib::new(hal, pcd_cpu_number_of_reserved_variable_mtrrs);
+//     mtrr_lib
+// }
+
