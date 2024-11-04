@@ -1945,13 +1945,13 @@ impl<H: Hal> MtrrLib<H> {
     }
 
     ///  This function gets the content in all MTRRs (variable and fixed)
-    pub fn get_all_mtrrs_impl(&self) -> MtrrSettings {
+    pub fn get_all_mtrrs_impl(&self) -> MtrrResult<MtrrSettings> {
         // Initialize the MTRR settings
         let mut mtrr_setting = MtrrSettings::default();
 
         // Check if MTRR is supported
         let Ok((fixed_mtrr_supported, variable_mtrr_ranges_count)) = self.mtrr_lib_is_mtrr_supported_internal() else {
-            return mtrr_setting;
+            return Err(MtrrError::MtrrNotSupported);
         };
 
         // Get MTRR_DEF_TYPE value
@@ -1969,7 +1969,7 @@ impl<H: Hal> MtrrLib<H> {
 
         // Get variable MTRRs
         mtrr_setting.variables = self.mtrr_get_variable_mtrr(variable_mtrr_ranges_count);
-        mtrr_setting
+        Ok(mtrr_setting)
     }
 
     ///  This function sets all MTRRs includes Variable and Fixed.
@@ -2022,7 +2022,7 @@ impl<H: Hal> MtrrLib<H> {
         let mut all_range_count = 1;
 
         // Determine the MTRR settings to use
-        let mtrrs = self.get_all_mtrrs_impl();
+        let mtrrs = self.get_all_mtrrs_impl()?;
 
         // Initialize the MTRR masks
         let (mtrr_valid_bits_mask, mtrr_valid_address_mask) = self.mtrr_lib_initialize_mtrr_mask();
@@ -2085,7 +2085,7 @@ impl<H: Hal> MtrrLib<H> {
         let mut contain_variable_mtrr = false;
 
         // Determine which MTRR settings to use
-        let mtrrs = self.get_all_mtrrs_impl();
+        let mtrrs = self.get_all_mtrrs_impl().unwrap_or(MtrrSettings::default());
 
         let Ok(ranges) = self.get_memory_ranges_impl() else {
             return;
@@ -2225,7 +2225,7 @@ impl<H: Hal> Mtrr for MtrrLib<H> {
         self.set_memory_attribute_impl(base_address, length, attribute)
     }
 
-    fn get_all_mtrrs(&self) -> MtrrSettings {
+    fn get_all_mtrrs(&self) -> MtrrResult<MtrrSettings> {
         self.get_all_mtrrs_impl()
     }
 

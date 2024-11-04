@@ -49,44 +49,46 @@
 //! ```no_run
 //! use mtrr::create_mtrr_lib;
 //! use mtrr::structs::MtrrMemoryCacheType;
+//! use mtrr::Mtrr;
 //!
 //! fn mtrr_lib_usage() {
 //!     // Create MTRR library
 //!     let mut mtrrlib = create_mtrr_lib(0);
 //!
 //!     // Get the current MTRR settings
-//!     let mut mtrr_settings = mtrrlib.get_all_mtrrs();
+//!     if let Ok(mut mtrr_settings) = mtrrlib.get_all_mtrrs() {
 //!
-//!     // Set default mem type to WriteBack and appropriately update the fixed mtrr
-//!     mtrr_settings.mtrr_def_type_reg.set_mem_type(MtrrMemoryCacheType::WriteBack as u8);
-//!     for index in 0..mtrr_settings.fixed.mtrr.len() {
-//!         mtrr_settings.fixed.mtrr[index] = 0x0606060606060606; //WriteBack
-//!     }
+//!          // Set default mem type to WriteBack and appropriately update the fixed mtrr
+//!          mtrr_settings.mtrr_def_type_reg.set_mem_type(MtrrMemoryCacheType::WriteBack as u8);
+//!          for index in 0..mtrr_settings.fixed.mtrr.len() {
+//!              mtrr_settings.fixed.mtrr[index] = 0x0606060606060606; //WriteBack
+//!          }
 //!
-//!     // Set the MTRR settings
-//!     mtrrlib.set_all_mtrrs(&mtrr_settings);
+//!          // Set the MTRR settings
+//!          mtrrlib.set_all_mtrrs(&mtrr_settings);
 //!
-//!     const BASE_128KB: u64 = 0x00020000;
-//!     const BASE_512KB: u64 = 0x00080000;
-//!     const BASE_1MB: u64 = 0x00100000;
-//!     const BASE_4GB: u64 = 0x0000000100000000;
+//!          const BASE_128KB: u64 = 0x00020000;
+//!          const BASE_512KB: u64 = 0x00080000;
+//!          const BASE_1MB: u64 = 0x00100000;
+//!          const BASE_4GB: u64 = 0x0000000100000000;
 //!
-//!     //
-//!     // Set memory range from 640KB to 1MB to uncacheable
-//!     //
-//!     let status = mtrrlib.set_memory_attribute(
-//!         BASE_512KB + BASE_128KB,
-//!         BASE_1MB - (BASE_512KB + BASE_128KB),
-//!         MtrrMemoryCacheType::Uncacheable,
-//!     );
-//!     assert!(status.is_ok());
+//!          //
+//!          // Set memory range from 640KB to 1MB to uncacheable
+//!          //
+//!          let status = mtrrlib.set_memory_attribute(
+//!              BASE_512KB + BASE_128KB,
+//!              BASE_1MB - (BASE_512KB + BASE_128KB),
+//!              MtrrMemoryCacheType::Uncacheable,
+//!          );
+//!          assert!(status.is_ok());
 //!
-//!     //
-//!     // Set the memory range from the start of the 32-bit MMIO area (32-bit PCI
-//!     // MMIO aperture on i440fx, PCIEXBAR on q35) to 4GB as uncacheable.
-//!     //
-//!     let status = mtrrlib.set_memory_attribute(0xB0000000, BASE_4GB - 0xB0000000, MtrrMemoryCacheType::Uncacheable);
-//!     assert!(status.is_ok());
+//!          //
+//!          // Set the memory range from the start of the 32-bit MMIO area (32-bit PCI
+//!          // MMIO aperture on i440fx, PCIEXBAR on q35) to 4GB as uncacheable.
+//!          //
+//!          let status = mtrrlib.set_memory_attribute(0xB0000000, BASE_4GB - 0xB0000000, MtrrMemoryCacheType::Uncacheable);
+//!          assert!(status.is_ok());
+//!      }
 //!
 //!     // MTRR Settings:
 //!     // =============
@@ -116,8 +118,8 @@
 
 #![cfg_attr(all(not(feature = "std"), not(test)), no_std)]
 extern crate alloc;
-use alloc::boxed::Box;
 use alloc::vec::Vec;
+use error::MtrrResult;
 use hal::X64Hal;
 use mtrr::MtrrLib;
 pub mod error;
@@ -129,7 +131,7 @@ mod hal;
 
 pub trait Mtrr {
     fn is_supported(&self) -> bool;
-    fn get_all_mtrrs(&self) -> structs::MtrrSettings;
+    fn get_all_mtrrs(&self) -> MtrrResult<structs::MtrrSettings>;
     fn set_all_mtrrs(&mut self, mtrr_setting: &structs::MtrrSettings);
     fn get_memory_attribute(&self, address: u64) -> structs::MtrrMemoryCacheType;
     fn set_memory_attribute(
@@ -137,18 +139,18 @@ pub trait Mtrr {
         base_address: u64,
         length: u64,
         attribute: structs::MtrrMemoryCacheType,
-    ) -> Result<(), error::MtrrError>;
-    fn set_memory_attributes(&mut self, ranges: &[structs::MtrrMemoryRange]) -> Result<(), error::MtrrError>;
-    fn get_memory_ranges(&self) -> Result<Vec<structs::MtrrMemoryRange>, error::MtrrError>;
+    ) -> MtrrResult<()>;
+    fn set_memory_attributes(&mut self, ranges: &[structs::MtrrMemoryRange]) -> MtrrResult<()>;
+    fn get_memory_ranges(&self) -> MtrrResult<Vec<structs::MtrrMemoryRange>>;
 
     fn debug_print_all_mtrrs(&self);
 }
 
 /// MTRR library constructor.
-/// This function creates a new MTRR trait instance.
-pub fn create_mtrr_lib(pcd_cpu_number_of_reserved_variable_mtrrs: u32) -> Box<dyn Mtrr> {
+/// This function creates a new MTRR instance.
+pub fn create_mtrr_lib(pcd_cpu_number_of_reserved_variable_mtrrs: u32) -> MtrrLib {
     let hal = X64Hal::new();
-    Box::new(MtrrLib::new(hal, pcd_cpu_number_of_reserved_variable_mtrrs))
+    MtrrLib::new(hal, pcd_cpu_number_of_reserved_variable_mtrrs)
 }
 
 #[cfg(test)]
