@@ -20,8 +20,8 @@ use crate::{
 use rand::random;
 use std::{panic, u32};
 
-use crate::Mtrr;
 use super::M_SYSTEM_PARAMETERS;
+use crate::Mtrr;
 
 //
 //  Compare the actual memory ranges against expected memory ranges and return PASS when they match.
