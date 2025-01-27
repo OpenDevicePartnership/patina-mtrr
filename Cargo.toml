@@ -5,7 +5,7 @@ publish = ["UefiRust"]
 edition = "2021"
 license = "BSD-2-Clause-Patent"
 description = "x64 MTRR programming library"
-repository = "https://github.com/pop-project/mtrr"
+repository = "https://github.com/OpenDevicePartnership/mtrr"
 keywords = ["mtrr"]
 
 [dependencies]
