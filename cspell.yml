@@ -1,0 +1,76 @@
+# @file cspell.yml
+#
+# CSpell configuration file
+#
+##
+# Copyright (c) Microsoft Corporation
+# SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+version: "0.2"
+language: en
+dictionaries:
+  - "companies"
+  - "cpp"
+  - "cpp-legacy"
+  - "java"
+  - "python"
+  - "rust"
+  - "softwareTerms"
+ignorePaths:
+  - "**/target/**"
+  - "**/book/**"
+  - "**/*.asm"
+  - "Makefile.toml"
+ignoreRegExpList: ["/0x[0-9a-fA-F]+/"]
+minWordLength: 5
+caseSensitive: false
+allowCompoundWords: true
+words:
+  - BASECORE
+  - bitfield
+  - BNDLDX
+  - BNDSTX
+  - CLFLUSH
+  - clfsh
+  - FXRSTOR
+  - FXSAVE
+  - hlength
+  - keyid
+  - lshift
+  - mawau
+  - MAWAU
+  - MKTME
+  - MMTRR
+  - mtrr
+  - Mtrr
+  - MTRR
+  - MTRRCAP
+  - mtrrlib
+  - mtrrs
+  - Mtrrs
+  - MTRRs
+  - mult
+  - ospke
+  - PCIEXBAR
+  - Physbase
+  - PHYSBASE
+  - Physmask
+  - PHYSMASK
+  - prefetchwt
+  - PREFETCHWT
+  - pytool
+  - rdmsr
+  - RDPKRU
+  - repr
+  - retval
+  - rshift
+  - TESTCODE
+  - tttracer
+  - Uncacheable
+  - vpopcntdq
+  - VPOPCNTDQ
+  - wbinvd
+  - windbgx
+  - WRMSR
+  - WRPKRU
+  - xfffffffffffff

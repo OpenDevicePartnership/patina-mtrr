@@ -1,4 +1,5 @@
-#[allow(unused_imports)]
+#![allow(unused_imports)]
+#![allow(clippy::needless_range_loop)]
 use core::arch::asm;
 use core::arch::x86_64::CpuidResult;
 
@@ -184,8 +185,7 @@ impl Hal for MockHal {
         }
 
         // Should never fall through to here
-        assert!(false);
-        return 0;
+        unreachable!();
     }
 
     fn asm_write_msr64(&mut self, msr_index: u32, value: u64) {
@@ -225,7 +225,7 @@ impl Hal for MockHal {
         }
 
         // Should never fall through to here
-        assert!(false);
+        unreachable!();
     }
 
     fn asm_msr_and_then_or_64(&mut self, index: u32, and_data: u64, or_data: u64) -> u64 {
@@ -265,14 +265,12 @@ impl Hal for MockHal {
                 result
             }
             _ => {
-                assert!(false);
-                result
+                unreachable!();
             }
         }
     }
 }
 
 pub fn create_mtrr_lib_with_mock_hal(hal: MockHal, pcd_cpu_number_of_reserved_variable_mtrrs: u32) -> MtrrLib<MockHal> {
-    let mtrr_lib = MtrrLib::new(hal, pcd_cpu_number_of_reserved_variable_mtrrs);
-    mtrr_lib
+    MtrrLib::new(hal, pcd_cpu_number_of_reserved_variable_mtrrs)
 }

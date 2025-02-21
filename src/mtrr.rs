@@ -789,7 +789,7 @@ impl<H: Hal> MtrrLib<H> {
     //  - `range_count` -   The count of memory ranges the array holds.
     //  - `vertex_count` -  The count of vertices in the graph.
     //  - `vertices` -      Array holding all vertices.
-    //  - `weight` -        2-dimention array holding weights between vertices.
+    //  - `weight` -        2-dimension array holding weights between vertices.
     //  - `start` -         Start vertex.
     //  - `stop` -          Stop vertex.
     //  - `types` -         Type bit mask of memory range from Start to Stop.
@@ -2085,7 +2085,7 @@ impl<H: Hal> MtrrLib<H> {
         let mut contain_variable_mtrr = false;
 
         // Determine which MTRR settings to use
-        let mtrrs = self.get_all_mtrrs_impl().unwrap_or(MtrrSettings::default());
+        let mtrrs = self.get_all_mtrrs_impl().unwrap_or_default();
 
         let Ok(ranges) = self.get_memory_ranges_impl() else {
             return;

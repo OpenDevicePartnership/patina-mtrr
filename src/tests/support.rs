@@ -1,3 +1,5 @@
+#![allow(clippy::needless_range_loop)]
+#![allow(clippy::manual_memcpy)]
 use crate::structs::{
     MsrIa32MtrrPhysbaseRegister, MsrIa32MtrrPhysmaskRegister, MtrrMemoryCacheType, MtrrMemoryRange, MtrrSettings,
     MtrrVariableSetting, MTRR_NUMBER_OF_FIXED_MTRR, MTRR_NUMBER_OF_VARIABLE_MTRR, SIZE_1MB,
@@ -100,7 +102,6 @@ pub fn generate_random_mtrr_pair(
     let mut base_shift;
     let mut random_boundary;
     let mut range_base;
-    let phys_base_phy_mask_valid_bits_mask;
 
     loop {
         size_shift = rng.gen_range(12..physical_address_bits);
@@ -110,12 +111,12 @@ pub fn generate_random_mtrr_pair(
         random_boundary = rng.gen_range(0..(1u64 << (physical_address_bits - base_shift)));
         range_base = random_boundary << base_shift;
 
-        if range_base >= SIZE_1MB as u64 && range_base <= max_physical_address - 1 {
+        if range_base >= SIZE_1MB as u64 && range_base < max_physical_address {
             break;
         }
     }
 
-    phys_base_phy_mask_valid_bits_mask = (max_physical_address - 1) & 0xfffffffffffff000u64;
+    let phys_base_phy_mask_valid_bits_mask = (max_physical_address - 1) & 0xfffffffffffff000u64;
 
     let mut phys_base;
     phys_base = MsrIa32MtrrPhysbaseRegister::from_bits(range_base & phys_base_phy_mask_valid_bits_mask);
@@ -275,10 +276,10 @@ pub fn generate_random_cache_type() -> MtrrMemoryCacheType {
 }
 
 //
-//  Determin the memory cache type for the Range.
+//  Determine the memory cache type for the Range.
 //
 //  @param DefaultType Default cache type.
-//  @param Range       The memory range to determin the cache type.
+//  @param Range       The memory range to determine the cache type.
 //  @param Ranges      The entire memory ranges.
 //  @param RangeCount  Count of the entire memory ranges.
 //
@@ -290,10 +291,10 @@ fn determine_output_memory_cache_type(
 ) {
     range.mem_type = MtrrMemoryCacheType::Invalid;
     for index in 0..raw_memory_ranges_count as usize {
-        if ranges_overlap(range, &raw_memory_ranges[index..index + 1], 1) {
-            if (raw_memory_ranges[index as usize].mem_type as u8) < (range.mem_type as u8) {
-                range.mem_type = raw_memory_ranges[index as usize].mem_type;
-            }
+        if ranges_overlap(range, &raw_memory_ranges[index..index + 1], 1)
+            && (raw_memory_ranges[index].mem_type as u8) < range.mem_type as u8
+        {
+            range.mem_type = raw_memory_ranges[index].mem_type;
         }
     }
 
@@ -310,7 +311,7 @@ fn determine_output_memory_cache_type(
 //  @return TRUE when Address is in the Range.
 //
 fn address_in_range(address: u64, raw_range: &MtrrMemoryRange) -> bool {
-    address >= raw_range.base_address && address <= raw_range.base_address + raw_range.length - 1
+    address >= raw_range.base_address && address < raw_range.base_address + raw_range.length
 }
 
 //
@@ -514,6 +515,7 @@ fn collect_endpoints(endpoints: &mut Vec<u64>, raw_memory_ranges: &[MtrrMemoryRa
 //  @param MemoryRanges         Memory ranges.
 //  @param MemoryRangeCount     Count of memory ranges.
 //
+#[allow(clippy::slow_vector_initialization)]
 pub fn get_effective_memory_ranges(
     default_type: MtrrMemoryCacheType,
     physical_address_bits: u32,
@@ -728,8 +730,7 @@ fn unit_test_get_effective_memory_ranges() {
         &mut expected_memory_ranges_count,
     );
 
-    for index in 0..expected_memory_ranges_count {
-        let range = &expected_memory_ranges[index];
+    for range in &expected_memory_ranges {
         println!("{:x} {:x} {:?}", range.base_address, range.length, range.mem_type)
     }
 }

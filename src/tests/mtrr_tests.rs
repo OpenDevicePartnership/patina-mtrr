@@ -1,3 +1,4 @@
+#![allow(clippy::needless_range_loop)]
 use crate::{
     hal::Hal,
     structs::{
@@ -18,7 +19,7 @@ use crate::{
     tests::{MtrrLibSystemParameter, M_FIXED_MTRRS_INDEX},
 };
 use rand::random;
-use std::{panic, u32};
+use std::panic;
 
 use super::M_SYSTEM_PARAMETERS;
 use crate::Mtrr;
@@ -52,6 +53,7 @@ fn verify_memory_ranges(
 //  @param ranges      Memory ranges to dump.
 //  @param range_count Count of memory ranges.
 //
+#[allow(clippy::legacy_numeric_constants)]
 fn dump_memory_ranges(ranges: &[MtrrMemoryRange], range_count: usize) {
     for index in 0..range_count {
         println!(
@@ -354,8 +356,10 @@ fn unit_test_mtrr_get_all_mtrrs() {
     system_parameter.fixed_mtrr_supported = false;
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
-    let mut expected_mtrr_settings = MtrrSettings::default();
-    expected_mtrr_settings.mtrr_def_type_reg = MsrIa32MtrrDefType::default().with_e(true).with_fe(false);
+    let mut expected_mtrr_settings = MtrrSettings {
+        mtrr_def_type_reg: MsrIa32MtrrDefType::default().with_e(true).with_fe(false),
+        ..Default::default()
+    };
     set_randomly_generated_mtrr_settings(&mut hal, &system_parameter, &mut expected_mtrr_settings);
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal, 0);
     let mtrr_settings = mtrrlib.get_all_mtrrs().unwrap();
@@ -367,8 +371,10 @@ fn unit_test_mtrr_get_all_mtrrs() {
     system_parameter.fixed_mtrr_supported = true;
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
-    let mut expected_mtrr_settings = MtrrSettings::default();
-    expected_mtrr_settings.mtrr_def_type_reg = MsrIa32MtrrDefType::default().with_e(true).with_fe(true);
+    let mut expected_mtrr_settings = MtrrSettings {
+        mtrr_def_type_reg: MsrIa32MtrrDefType::default().with_e(true).with_fe(true),
+        ..Default::default()
+    };
     set_randomly_generated_mtrr_settings(&mut hal, &system_parameter, &mut expected_mtrr_settings);
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal, 0);
     let mtrr_settings = mtrrlib.get_all_mtrrs().unwrap();
@@ -380,8 +386,10 @@ fn unit_test_mtrr_get_all_mtrrs() {
     system_parameter.fixed_mtrr_supported = true;
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(&system_parameter);
-    let mut expected_mtrr_settings = MtrrSettings::default();
-    expected_mtrr_settings.mtrr_def_type_reg = MsrIa32MtrrDefType::default().with_e(true).with_fe(true);
+    let _expected_mtrr_settings = MtrrSettings {
+        mtrr_def_type_reg: MsrIa32MtrrDefType::default().with_e(true).with_fe(true),
+        ..Default::default()
+    };
     // set_randomly_generated_mtrr_settings(&mut hal, &system_parameter, &mut expected_mtrr_settings);
     let mtrrlib = create_mtrr_lib_with_mock_hal(hal, 0);
     let mtrr_settings = mtrrlib.get_all_mtrrs();
@@ -477,10 +485,8 @@ fn unit_test_mtrr_get_memory_attribute_in_variable_mtrr() {
         hal.asm_write_msr64(MSR_IA32_MTRR_PHYSMASK0 + (index << 1), pair.mask);
     }
 
-    let valid_mtrr_bits_mask: u64;
-    let valid_mtrr_address_mask: u64;
-    valid_mtrr_bits_mask = (1u64 << system_parameter.physical_address_bits) - 1;
-    valid_mtrr_address_mask = valid_mtrr_bits_mask & 0xfffffffffffff000;
+    let valid_mtrr_bits_mask = (1u64 << system_parameter.physical_address_bits) - 1;
+    let valid_mtrr_address_mask = valid_mtrr_bits_mask & 0xfffffffffffff000;
     // println!("valid_mtrr_bits_mask: {:x}", valid_mtrr_bits_mask);
     // println!("valid_mtrr_address_mask: {:x}", valid_mtrr_address_mask);
 
@@ -592,8 +598,6 @@ fn unit_test_invalid_memory_layouts() {
 
 fn unit_test_invalid_memory_layouts_impl(system_parameter: &MtrrLibSystemParameter) {
     let mut ranges = [MtrrMemoryRange::default(); MTRR_NUMBER_OF_VARIABLE_MTRR * 2 + 1];
-    let range_count: u32;
-    let max_address: u64;
     let mut base_address: u64;
     let mut length: u64;
 
@@ -601,8 +605,8 @@ fn unit_test_invalid_memory_layouts_impl(system_parameter: &MtrrLibSystemParamet
     hal.initialize_mtrr_regs(system_parameter);
     let mut mtrrlib = create_mtrr_lib_with_mock_hal(hal, 0);
 
-    range_count = random32(1, ranges.len() as u32);
-    max_address = 1u64 << (system_parameter.physical_address_bits - system_parameter.mk_tme_keyid_bits);
+    let range_count = random32(1, ranges.len() as u32);
+    let max_address = 1u64 << (system_parameter.physical_address_bits - system_parameter.mk_tme_keyid_bits);
 
     for index in 0..range_count {
         loop {
@@ -681,7 +685,6 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_setti
     let mut raw_mtrr_range = [MtrrMemoryRange::default(); MTRR_NUMBER_OF_VARIABLE_MTRR];
     let mut expected_memory_ranges = [MtrrMemoryRange::default();
         MTRR_NUMBER_OF_FIXED_MTRR * std::mem::size_of::<u64>() + 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 1];
-    let raw_mtrr_range_count: u32;
     let mut expected_memory_ranges_count;
 
     let mut actual_memory_ranges = [MtrrMemoryRange::default();
@@ -718,8 +721,8 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_setti
         wc_count,
     );
 
-    raw_mtrr_range_count = uc_count + wt_count + wb_count + wp_count + wc_count;
-    expected_memory_ranges_count = expected_memory_ranges.len() as usize;
+    let raw_mtrr_range_count = uc_count + wt_count + wb_count + wp_count + wc_count;
+    expected_memory_ranges_count = expected_memory_ranges.len();
 
     // //     // TESTCODE BEGIN
     // let raw_mtrr_range: [MtrrMemoryRange; 9] = [
@@ -752,7 +755,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_setti
     dump_memory_ranges(&expected_memory_ranges, expected_memory_ranges_count);
 
     let default_mem_type = system_parameter.default_cache_type as u8;
-    let default_mem_type_reg = MsrIa32MtrrDefType::default().with_mem_type(default_mem_type as u8);
+    let default_mem_type_reg = MsrIa32MtrrDefType::default().with_mem_type(default_mem_type);
 
     let mtrr_setting =
         MtrrSettings::new(MtrrFixedSettings::default(), MtrrVariableSettings::default(), default_mem_type_reg);
@@ -833,7 +836,6 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr
     let mut raw_mtrr_range = [MtrrMemoryRange::default(); MTRR_NUMBER_OF_VARIABLE_MTRR];
     let mut expected_memory_ranges = [MtrrMemoryRange::default();
         MTRR_NUMBER_OF_FIXED_MTRR * std::mem::size_of::<u64>() + 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 1];
-    let raw_mtrr_range_count: u32;
     let mut expected_memory_ranges_count;
 
     let mut actual_memory_ranges = [MtrrMemoryRange::default();
@@ -870,8 +872,8 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr
         wc_count,
     );
 
-    raw_mtrr_range_count = uc_count + wt_count + wb_count + wp_count + wc_count;
-    expected_memory_ranges_count = expected_memory_ranges.len() as usize;
+    let raw_mtrr_range_count = uc_count + wt_count + wb_count + wp_count + wc_count;
+    expected_memory_ranges_count = expected_memory_ranges.len();
 
     //     // TESTCODE BEGIN
     // let raw_mtrr_range: [MtrrMemoryRange; 12] = [
