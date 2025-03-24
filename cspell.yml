@@ -35,6 +35,7 @@ words:
   - FXRSTOR
   - FXSAVE
   - hlength
+  - keccak
   - keyid
   - lshift
   - mawau
