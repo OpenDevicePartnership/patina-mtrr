@@ -9,7 +9,7 @@ repository = "https://github.com/OpenDevicePartnership/mtrr"
 keywords = ["mtrr"]
 
 [dependencies]
-bitfield-struct = "0.9"
+bitfield-struct = "0.10"
 cfg-if = "1"
 
 [dev-dependencies]
