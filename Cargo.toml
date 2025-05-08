@@ -1,7 +1,7 @@
 [package]
 name = "mtrr"
 version = "0.1.1"
-publish = ["UefiRust"]
+publish = ["patina-fw"]
 edition = "2021"
 license = "BSD-2-Clause-Patent"
 description = "x64 MTRR programming library"
