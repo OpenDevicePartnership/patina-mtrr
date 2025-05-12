@@ -47,9 +47,9 @@
 //!
 //! ## API usage:
 //! ```no_run
-//! use mtrr::create_mtrr_lib;
-//! use mtrr::structs::MtrrMemoryCacheType;
-//! use mtrr::Mtrr;
+//! use patina_mtrr::create_mtrr_lib;
+//! use patina_mtrr::structs::MtrrMemoryCacheType;
+//! use patina_mtrr::Mtrr;
 //!
 //! fn mtrr_lib_usage() {
 //!     // Create MTRR library
