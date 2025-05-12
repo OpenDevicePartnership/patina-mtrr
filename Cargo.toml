@@ -1,11 +1,10 @@
 [package]
-name = "mtrr"
+name = "patina-mtrr"
 version = "0.1.1"
-publish = ["UefiRust"]
 edition = "2021"
 license = "BSD-2-Clause-Patent"
 description = "x64 MTRR programming library"
-repository = "https://github.com/OpenDevicePartnership/mtrr"
+repository = "https://github.com/OpenDevicePartnership/patina-mtrr"
 keywords = ["mtrr"]
 
 [dependencies]
