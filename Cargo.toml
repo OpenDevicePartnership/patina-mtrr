@@ -1,6 +1,6 @@
 [package]
 name = "patina-mtrr"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 license = "BSD-2-Clause-Patent"
 description = "x64 MTRR programming library"
