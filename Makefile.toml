@@ -4,8 +4,8 @@ default_to_workspace = false
 [env]
 RUSTC_BOOTSTRAP = 1
 BUILD_FLAGS = "--profile ${RUSTC_PROFILE} -Zbuild-std=core,compiler_builtins,alloc -Zbuild-std-features=compiler-builtins-mem -Zunstable-options --timings=html"
-UEFI_CRATES = "-p patina-mtrr"
-BUILD_CRATES = "-p patina-mtrr"
+UEFI_CRATES = "-p patina_mtrr"
+BUILD_CRATES = "-p patina_mtrr"
 COV_FLAGS = { value = "--out html --exclude-files **/tests/*", condition = { env_not_set = ["COV_FLAGS"] } }
 
 [env.development]
@@ -29,7 +29,7 @@ Example:
 alias = "build-std"
 
 [tasks.build-std]
-description = """Builds patina-mtrr crate as std target.
+description = """Builds patina_mtrr crate as std target.
 
 Customizations:
     -p [development|release]: Builds in debug or release. Default: development
@@ -42,7 +42,7 @@ command = "cargo"
 args = ["build", "--profile", "${RUSTC_PROFILE}", "--features", "std", "--target", "${CARGO_MAKE_RUST_TARGET_TRIPLE}", "@@split(BUILD_CRATES, )", "@@split(UEFI_CRATES, )"]
 
 [tasks.build-x64]
-description = """Builds patina-mtrr crate as UEFI target.
+description = """Builds patina_mtrr crate as UEFI target.
 
 Example:
     `cargo make build-x64`
@@ -53,7 +53,7 @@ command = "cargo"
 args = ["build", "--target", "x86_64-unknown-uefi", "@@split(BUILD_FLAGS, )", "@@split(UEFI_CRATES, )"]
 
 [tasks.build-aarch64]
-description = """Builds patina-mtrr crate as UEFI target.
+description = """Builds patina_mtrr crate as UEFI target.
 
 Example:
     `cargo make build-aarch64`
