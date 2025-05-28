@@ -1498,7 +1498,7 @@ impl<H: Hal> MtrrLib<H> {
             let mut end = index;
 
             while (end + 1) < working_range_count {
-                if (1 << working_ranges[end + 1].mem_type as u8 & compatible_types) == 0 {
+                if ((1 << working_ranges[end + 1].mem_type as u8) & compatible_types) == 0 {
                     break;
                 }
                 end += 1;
