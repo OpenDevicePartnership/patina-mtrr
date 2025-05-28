@@ -2,12 +2,12 @@
 use crate::{
     hal::Hal,
     structs::{
-        MsrIa32MtrrDefType, MsrIa32MtrrPhysbaseRegister, MsrIa32MtrrPhysmaskRegister, MtrrFixedSettings,
-        MtrrMemoryCacheType, MtrrMemoryRange, MtrrSettings, MtrrVariableSetting, MtrrVariableSettings,
         MSR_IA32_MTRR_DEF_TYPE, MSR_IA32_MTRR_PHYSBASE0, MSR_IA32_MTRR_PHYSMASK0, MTRR_NUMBER_OF_FIXED_MTRR,
-        MTRR_NUMBER_OF_VARIABLE_MTRR,
+        MTRR_NUMBER_OF_VARIABLE_MTRR, MsrIa32MtrrDefType, MsrIa32MtrrPhysbaseRegister, MsrIa32MtrrPhysmaskRegister,
+        MtrrFixedSettings, MtrrMemoryCacheType, MtrrMemoryRange, MtrrSettings, MtrrVariableSetting,
+        MtrrVariableSettings,
     },
-    tests::{mock_hal::MockHal, M_DEFAULT_SYSTEM_PARAMETER},
+    tests::{M_DEFAULT_SYSTEM_PARAMETER, mock_hal::MockHal},
     utils::lshift_u64,
 };
 use crate::{
@@ -16,7 +16,7 @@ use crate::{
         collect_test_result, generate_random_cache_type, generate_random_mtrr_pair,
         generate_valid_and_configurable_mtrr_pairs, get_effective_memory_ranges, random32, random64,
     },
-    tests::{MtrrLibSystemParameter, M_FIXED_MTRRS_INDEX},
+    tests::{M_FIXED_MTRRS_INDEX, MtrrLibSystemParameter},
 };
 use rand::random;
 use std::panic;

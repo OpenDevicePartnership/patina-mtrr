@@ -1,12 +1,31 @@
 // Below clippy override is enforced to match the Rust code with the C MtrrLib
 // implementation
 #![allow(clippy::needless_range_loop)]
+use crate::Mtrr;
 use crate::error::MtrrError;
 use crate::error::MtrrResult;
 use crate::hal::Hal;
 use crate::hal::X64Hal;
+use crate::structs::BIT7;
+use crate::structs::BIT11;
+use crate::structs::CLEAR_SEED;
+use crate::structs::CPUID_EXTENDED_FUNCTION;
+use crate::structs::CPUID_SIGNATURE;
+use crate::structs::CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS;
+use crate::structs::CPUID_VERSION_INFO;
+use crate::structs::CPUID_VIR_PHY_ADDRESS_SIZE;
 use crate::structs::CpuidStructuredExtendedFeatureFlagsEcx;
 use crate::structs::CpuidVirPhyAddressSizeEax;
+use crate::structs::MMTRR_LIB_FIXED_MTRR_TABLE;
+use crate::structs::MSR_IA32_MTRR_DEF_TYPE;
+use crate::structs::MSR_IA32_MTRR_PHYSBASE0;
+use crate::structs::MSR_IA32_MTRR_PHYSMASK0;
+use crate::structs::MSR_IA32_MTRRCAP;
+use crate::structs::MSR_IA32_TME_ACTIVATE;
+use crate::structs::MTRR_NUMBER_OF_FIXED_MTRR;
+use crate::structs::MTRR_NUMBER_OF_LOCAL_MTRR_RANGES;
+use crate::structs::MTRR_NUMBER_OF_VARIABLE_MTRR;
+use crate::structs::MTRR_NUMBER_OF_WORKING_MTRR_RANGES;
 use crate::structs::MsrIa32MtrrDefType;
 use crate::structs::MsrIa32TmeActivateRegister;
 use crate::structs::MtrrContext;
@@ -17,24 +36,6 @@ use crate::structs::MtrrMemoryRange;
 use crate::structs::MtrrSettings;
 use crate::structs::MtrrVariableSetting;
 use crate::structs::MtrrVariableSettings;
-use crate::structs::BIT11;
-use crate::structs::BIT7;
-use crate::structs::CLEAR_SEED;
-use crate::structs::CPUID_EXTENDED_FUNCTION;
-use crate::structs::CPUID_SIGNATURE;
-use crate::structs::CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS;
-use crate::structs::CPUID_VERSION_INFO;
-use crate::structs::CPUID_VIR_PHY_ADDRESS_SIZE;
-use crate::structs::MMTRR_LIB_FIXED_MTRR_TABLE;
-use crate::structs::MSR_IA32_MTRRCAP;
-use crate::structs::MSR_IA32_MTRR_DEF_TYPE;
-use crate::structs::MSR_IA32_MTRR_PHYSBASE0;
-use crate::structs::MSR_IA32_MTRR_PHYSMASK0;
-use crate::structs::MSR_IA32_TME_ACTIVATE;
-use crate::structs::MTRR_NUMBER_OF_FIXED_MTRR;
-use crate::structs::MTRR_NUMBER_OF_LOCAL_MTRR_RANGES;
-use crate::structs::MTRR_NUMBER_OF_VARIABLE_MTRR;
-use crate::structs::MTRR_NUMBER_OF_WORKING_MTRR_RANGES;
 use crate::structs::OR_SEED;
 use crate::structs::SCRATCH_BUFFER_SIZE;
 use crate::structs::SIZE_1MB;
@@ -44,7 +45,6 @@ use crate::utils::is_pow2;
 use crate::utils::lshift_u64;
 use crate::utils::mult_u64x32;
 use crate::utils::rshift_u64;
-use crate::Mtrr;
 use alloc::vec::Vec;
 use core::mem::size_of;
 use core::ptr::write_bytes;
@@ -339,11 +339,7 @@ impl<H: Hal> MtrrLib<H> {
     //  - `address` -    The address to return the alignment.
     //  - `alignment0` - The alignment to return when Address is 0.
     fn mtrr_lib_biggest_alignment(address: u64, alignment0: u64) -> u64 {
-        if address == 0 {
-            alignment0
-        } else {
-            address & ((!address) + 1)
-        }
+        if address == 0 { alignment0 } else { address & ((!address) + 1) }
     }
 
     //  Return whether the left MTRR type precedes the right MTRR type.
@@ -429,11 +425,7 @@ impl<H: Hal> MtrrLib<H> {
                 || Self::mtrr_lib_type_left_precede_right(mtrr_type2, mtrr_type1)
         );
 
-        if Self::mtrr_lib_type_left_precede_right(mtrr_type1, mtrr_type2) {
-            mtrr_type1
-        } else {
-            mtrr_type2
-        }
+        if Self::mtrr_lib_type_left_precede_right(mtrr_type1, mtrr_type2) { mtrr_type1 } else { mtrr_type2 }
     }
 
     //  Function will get the memory cache type of the specific address.

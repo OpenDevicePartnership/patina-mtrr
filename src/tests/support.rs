@@ -1,8 +1,8 @@
 #![allow(clippy::needless_range_loop)]
 #![allow(clippy::manual_memcpy)]
 use crate::structs::{
-    MsrIa32MtrrPhysbaseRegister, MsrIa32MtrrPhysmaskRegister, MtrrMemoryCacheType, MtrrMemoryRange, MtrrSettings,
-    MtrrVariableSetting, MTRR_NUMBER_OF_FIXED_MTRR, MTRR_NUMBER_OF_VARIABLE_MTRR, SIZE_1MB,
+    MTRR_NUMBER_OF_FIXED_MTRR, MTRR_NUMBER_OF_VARIABLE_MTRR, MsrIa32MtrrPhysbaseRegister, MsrIa32MtrrPhysmaskRegister,
+    MtrrMemoryCacheType, MtrrMemoryRange, MtrrSettings, MtrrVariableSetting, SIZE_1MB,
 };
 
 use rand::Rng;
