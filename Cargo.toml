@@ -2,6 +2,7 @@
 name = "patina_mtrr"
 version = "1.0.0"
 edition = "2024"
+publish = ["patina-fw"]
 license = "BSD-2-Clause-Patent"
 description = "x64 MTRR programming library"
 repository = "https://github.com/OpenDevicePartnership/patina-mtrr"
