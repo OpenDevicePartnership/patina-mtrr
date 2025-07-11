@@ -9,69 +9,49 @@
 version: "0.2"
 language: en
 dictionaries:
-  - "companies"
-  - "cpp"
-  - "cpp-legacy"
-  - "java"
-  - "python"
+  - "makefile"
   - "rust"
-  - "softwareTerms"
 ignorePaths:
   - "**/target/**"
   - "**/book/**"
   - "**/*.asm"
   - "Makefile.toml"
-ignoreRegExpList: ["/0x[0-9a-fA-F]+/"]
+  - "deny.toml"
+ignoreRegExpList: ["/0x[0-9a-fA-F]+/", ".*asm!\\(.*?\\);"]
 minWordLength: 5
 caseSensitive: false
 allowCompoundWords: true
 words:
-  - BASECORE
-  - bitfield
-  - BNDLDX
-  - BNDSTX
-  - CLFLUSH
+  - bndldx
+  - bndstx
+  - clflush
   - clfsh
-  - FXRSTOR
-  - FXSAVE
-  - hlength
-  - keccak
+  - cmpxchg
+  - cpuid
+  - fxrstor
+  - fxsave
   - keyid
   - lshift
+  - hlength
   - mawau
-  - MAWAU
-  - MKTME
-  - MMTRR
-  - mtrr
-  - Mtrr
-  - MTRR
-  - MTRRCAP
+  - maxphysaddr
+  - mktme
+  - mtrrcap
   - mtrrlib
   - mtrrs
-  - Mtrrs
-  - MTRRs
-  - mult
+  - nomem
   - ospke
-  - PCIEXBAR
-  - Physbase
-  - PHYSBASE
-  - Physmask
-  - PHYSMASK
+  - pciexbar
   - prefetchwt
-  - PREFETCHWT
-  - pytool
   - rdmsr
-  - RDPKRU
-  - repr
-  - retval
+  - rdpid
+  - rdpkru
   - rshift
-  - TESTCODE
-  - tttracer
-  - Uncacheable
+  - sysenter
+  - sysexit
+  - uintn
+  - uncacheable
   - vpopcntdq
-  - VPOPCNTDQ
   - wbinvd
-  - windbgx
-  - WRMSR
-  - WRPKRU
-  - xfffffffffffff
+  - wrmsr
+  - wrpkru

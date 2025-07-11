@@ -40,8 +40,7 @@ pub struct MockHal {
     cpuid_extended_feature_flags_ecx: CpuidStructuredExtendedFeatureFlagsEcx,
     cpuid_vir_phy_address_size_eax: CpuidVirPhyAddressSizeEax,
 
-    // Mocked hal functions state. Replicated from
-    // mu_tiano_platforms\MU_BASECORE\MdePkg\Library\BaseLib\X86UnitTestHost.c
+    // Mocked hal functions state.
     interrupt_state: bool,
     cr3: u64,
     cr4: u64,

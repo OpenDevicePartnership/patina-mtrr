@@ -165,7 +165,7 @@ pub(crate) const MSR_IA32_MTRR_FIX4K_F0000: u32 = 0x0000026E;
 pub(crate) const MSR_IA32_MTRR_FIX4K_F8000: u32 = 0x0000026F;
 
 // Table for fixed MTRRs
-pub(crate) const MMTRR_LIB_FIXED_MTRR_TABLE: [FixedMtrr; 11] = [
+pub(crate) const MTRR_LIB_FIXED_MTRR_TABLE: [FixedMtrr; 11] = [
     FixedMtrr { msr: MSR_IA32_MTRR_FIX64K_00000, base_address: 0, length: SIZE_64KB },
     FixedMtrr { msr: MSR_IA32_MTRR_FIX16K_80000, base_address: 0x80000, length: SIZE_16KB },
     FixedMtrr { msr: MSR_IA32_MTRR_FIX16K_A0000, base_address: 0xA0000, length: SIZE_16KB },

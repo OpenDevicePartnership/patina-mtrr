@@ -16,12 +16,12 @@ use crate::structs::CPUID_VERSION_INFO;
 use crate::structs::CPUID_VIR_PHY_ADDRESS_SIZE;
 use crate::structs::CpuidStructuredExtendedFeatureFlagsEcx;
 use crate::structs::CpuidVirPhyAddressSizeEax;
-use crate::structs::MMTRR_LIB_FIXED_MTRR_TABLE;
 use crate::structs::MSR_IA32_MTRR_DEF_TYPE;
 use crate::structs::MSR_IA32_MTRR_PHYSBASE0;
 use crate::structs::MSR_IA32_MTRR_PHYSMASK0;
 use crate::structs::MSR_IA32_MTRRCAP;
 use crate::structs::MSR_IA32_TME_ACTIVATE;
+use crate::structs::MTRR_LIB_FIXED_MTRR_TABLE;
 use crate::structs::MTRR_NUMBER_OF_FIXED_MTRR;
 use crate::structs::MTRR_NUMBER_OF_LOCAL_MTRR_RANGES;
 use crate::structs::MTRR_NUMBER_OF_VARIABLE_MTRR;
@@ -197,7 +197,7 @@ impl<H: Hal> MtrrLib<H> {
             return fixed_settings;
         }
 
-        for (index, entry) in MMTRR_LIB_FIXED_MTRR_TABLE.iter().enumerate() {
+        for (index, entry) in MTRR_LIB_FIXED_MTRR_TABLE.iter().enumerate() {
             if index < MTRR_NUMBER_OF_FIXED_MTRR {
                 fixed_settings.mtrr[index] = self.hal.asm_read_msr64(entry.msr);
             }
@@ -245,18 +245,18 @@ impl<H: Hal> MtrrLib<H> {
         let mut sub_length: u64;
 
         // Find the fixed MTRR index to be programmed
-        while msr_index < MMTRR_LIB_FIXED_MTRR_TABLE.len() as u32 {
-            let entry = &MMTRR_LIB_FIXED_MTRR_TABLE[msr_index as usize];
+        while msr_index < MTRR_LIB_FIXED_MTRR_TABLE.len() as u32 {
+            let entry = &MTRR_LIB_FIXED_MTRR_TABLE[msr_index as usize];
             if (*base >= entry.base_address as u64) && (*base < (entry.base_address as u64 + 8 * entry.length as u64)) {
                 break;
             }
             msr_index += 1;
         }
 
-        assert!(msr_index != MMTRR_LIB_FIXED_MTRR_TABLE.len() as u32);
+        assert!(msr_index != MTRR_LIB_FIXED_MTRR_TABLE.len() as u32);
 
         // Find the begin offset in fixed MTRR and calculate byte offset of left shift
-        let entry = &MMTRR_LIB_FIXED_MTRR_TABLE[msr_index as usize];
+        let entry = &MTRR_LIB_FIXED_MTRR_TABLE[msr_index as usize];
         if ((*base - entry.base_address as u64) % entry.length as u64) != 0 {
             return Err(MtrrError::FixedRangeMtrrBaseAddressNotAligned);
         }
@@ -441,14 +441,14 @@ impl<H: Hal> MtrrLib<H> {
         // If address is less than 1M, then try to go through the fixed MTRR
         if address < SIZE_1MB as u64 && def_type.fe() {
             for index in 0..MTRR_NUMBER_OF_FIXED_MTRR {
-                if (address >= MMTRR_LIB_FIXED_MTRR_TABLE[index].base_address as u64)
+                if (address >= MTRR_LIB_FIXED_MTRR_TABLE[index].base_address as u64)
                     && (address
-                        < MMTRR_LIB_FIXED_MTRR_TABLE[index].base_address as u64
-                            + (MMTRR_LIB_FIXED_MTRR_TABLE[index].length as u64 * 8))
+                        < MTRR_LIB_FIXED_MTRR_TABLE[index].base_address as u64
+                            + (MTRR_LIB_FIXED_MTRR_TABLE[index].length as u64 * 8))
                 {
-                    let sub_index = (address - MMTRR_LIB_FIXED_MTRR_TABLE[index].base_address as u64)
-                        / MMTRR_LIB_FIXED_MTRR_TABLE[index].length as u64;
-                    let fixed_mtrr = self.hal.asm_read_msr64(MMTRR_LIB_FIXED_MTRR_TABLE[index].msr);
+                    let sub_index = (address - MTRR_LIB_FIXED_MTRR_TABLE[index].base_address as u64)
+                        / MTRR_LIB_FIXED_MTRR_TABLE[index].length as u64;
+                    let fixed_mtrr = self.hal.asm_read_msr64(MTRR_LIB_FIXED_MTRR_TABLE[index].msr);
                     return (((fixed_mtrr >> (sub_index * 8)) & 0xFF) as u8).into();
                 }
             }
@@ -1215,8 +1215,8 @@ impl<H: Hal> MtrrLib<H> {
     ) -> MtrrResult<()> {
         let mut base: u64 = 0;
 
-        for msr_index in 0..MMTRR_LIB_FIXED_MTRR_TABLE.len() {
-            assert!(base == MMTRR_LIB_FIXED_MTRR_TABLE[msr_index].base_address as u64);
+        for msr_index in 0..MTRR_LIB_FIXED_MTRR_TABLE.len() {
+            assert!(base == MTRR_LIB_FIXED_MTRR_TABLE[msr_index].base_address as u64);
 
             for index in 0..size_of::<u64>() {
                 let memory_type: MtrrMemoryCacheType = unsafe {
@@ -1229,7 +1229,7 @@ impl<H: Hal> MtrrLib<H> {
                     range_capacity,
                     range_count,
                     base,
-                    MMTRR_LIB_FIXED_MTRR_TABLE[msr_index].length as u64,
+                    MTRR_LIB_FIXED_MTRR_TABLE[msr_index].length as u64,
                     memory_type,
                 );
 
@@ -1239,7 +1239,7 @@ impl<H: Hal> MtrrLib<H> {
                     }
                 }
 
-                base += MMTRR_LIB_FIXED_MTRR_TABLE[msr_index].length as u64;
+                base += MTRR_LIB_FIXED_MTRR_TABLE[msr_index].length as u64;
             }
         }
 
@@ -1840,7 +1840,7 @@ impl<H: Hal> MtrrLib<H> {
                     mtrr_context_valid = true;
                 }
 
-                self.hal.asm_msr_and_then_or_64(MMTRR_LIB_FIXED_MTRR_TABLE[index].msr, !clear_mask, or_masks[index]);
+                self.hal.asm_msr_and_then_or_64(MTRR_LIB_FIXED_MTRR_TABLE[index].msr, !clear_mask, or_masks[index]);
             }
         }
 
@@ -1930,7 +1930,7 @@ impl<H: Hal> MtrrLib<H> {
     //  - `fixed_settings` -  A buffer to hold fixed MTRRs content.
     fn mtrr_set_fixed_mtrr(&mut self, fixed_settings: &MtrrFixedSettings) {
         for index in 0..MTRR_NUMBER_OF_FIXED_MTRR {
-            let msr = MMTRR_LIB_FIXED_MTRR_TABLE[index].msr;
+            let msr = MTRR_LIB_FIXED_MTRR_TABLE[index].msr;
             let value = fixed_settings.mtrr[index];
             self.hal.asm_write_msr64(msr, value);
         }
@@ -2063,7 +2063,7 @@ impl<H: Hal> MtrrLib<H> {
     #[cfg(test)]
     pub fn debug_print_all_mtrrs_impl(&self) {
         // Array of MTRR memory cache type short names
-        const MMTRR_MEMORY_CACHE_TYPE_SHORT_NAME: [&str; 8] = [
+        const MTRR_MEMORY_CACHE_TYPE_SHORT_NAME: [&str; 8] = [
             "UC", // CacheUncacheable
             "WC", // CacheWriteCombining
             "R*", // Invalid
@@ -2088,7 +2088,7 @@ impl<H: Hal> MtrrLib<H> {
         println!("=============");
         println!("MTRR Default Type: {:#016x}", mtrrs.mtrr_def_type_reg.into_bits());
 
-        for index in 0..MMTRR_LIB_FIXED_MTRR_TABLE.len() {
+        for index in 0..MTRR_LIB_FIXED_MTRR_TABLE.len() {
             println!("Fixed MTRR[{:02}]   : {:#016x}", index, mtrrs.fixed.mtrr[index]);
         }
 
@@ -2113,7 +2113,7 @@ impl<H: Hal> MtrrLib<H> {
         println!("Memory Ranges:");
         println!("====================================");
         for index in 0..ranges.len() {
-            let cache_type_name = MMTRR_MEMORY_CACHE_TYPE_SHORT_NAME[ranges[index].mem_type as usize];
+            let cache_type_name = MTRR_MEMORY_CACHE_TYPE_SHORT_NAME[ranges[index].mem_type as usize];
             println!(
                 "{}:{:#016x}-{:#016x}",
                 cache_type_name,
