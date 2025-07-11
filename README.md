@@ -13,6 +13,9 @@ Software Developers Manual
 
 ## Getting Started
 
+You can generate API documentation by running `cargo make doc`. You can have the documentation opened in your browser
+by running `cargo make doc-open`.
+
 ### Public API
 
 ```rust
