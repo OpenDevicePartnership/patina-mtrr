@@ -117,6 +117,8 @@
 //!```
 
 #![cfg_attr(all(not(feature = "std"), not(test)), no_std)]
+#![feature(coverage_attribute)]
+
 extern crate alloc;
 cfg_if::cfg_if! {
     if #[cfg(not(all(target_os = "uefi", target_arch = "aarch64")))] {
@@ -156,6 +158,7 @@ cfg_if::cfg_if! {
     }
 
     #[cfg(test)]
+    #[coverage(off)]
     mod tests;
     }
 }
