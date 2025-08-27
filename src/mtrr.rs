@@ -1233,10 +1233,10 @@ impl<H: Hal> MtrrLib<H> {
                     memory_type,
                 );
 
-                if let Err(status) = status {
-                    if status == MtrrError::OutOfResources {
-                        return Err(MtrrError::OutOfResources);
-                    }
+                if let Err(status) = status
+                    && status == MtrrError::OutOfResources
+                {
+                    return Err(MtrrError::OutOfResources);
                 }
 
                 base += MTRR_LIB_FIXED_MTRR_TABLE[msr_index].length as u64;
