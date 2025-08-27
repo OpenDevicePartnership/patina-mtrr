@@ -584,7 +584,7 @@ pub fn get_effective_memory_ranges(
     let mut output_ranges: Vec<MtrrMemoryRange> = Vec::with_capacity(all_range_pieces_count_max);
     output_ranges.resize(all_range_pieces_count_max, MtrrMemoryRange::default());
 
-    println!("all_endpoints_count: {} ", all_endpoints_count);
+    println!("all_endpoints_count: {all_endpoints_count} ");
     collect_endpoints(&mut all_endpoints_inclusive, raw_memory_ranges, raw_memory_range_count);
     println!("all_endpoints_inclusive.len(): {} ", all_endpoints_inclusive.len());
 
@@ -601,8 +601,7 @@ pub fn get_effective_memory_ranges(
         let overlap_flag_relation = check_overlap_bit_flags_relation(overlap_bit_flag1, overlap_bit_flag2);
 
         println!(
-            "#### Index = {} OverlapBitFlag1 = {:x}, OverlapBitFlag2 = {:x}, OverlapFlagRelation = {:x} \n",
-            index, overlap_bit_flag1, overlap_bit_flag2, overlap_flag_relation
+            "#### Index = {index} OverlapBitFlag1 = {overlap_bit_flag1:x}, OverlapBitFlag2 = {overlap_bit_flag2:x}, OverlapFlagRelation = {overlap_flag_relation:x} \n",
         );
 
         match overlap_flag_relation {
@@ -690,7 +689,7 @@ pub fn get_effective_memory_ranges(
         &mut output_ranges_count,
     );
 
-    println!("output_ranges_count: {} ", output_ranges_count);
+    println!("output_ranges_count: {output_ranges_count} ");
     for i in 0..output_ranges_count {
         println!(
             "#### AllRangePieces[{}] = {:x}, {:x}, {:?} \n",

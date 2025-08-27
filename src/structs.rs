@@ -107,7 +107,7 @@ impl From<u8> for MtrrMemoryCacheType {
             5 => MtrrMemoryCacheType::WriteProtected,
             6 => MtrrMemoryCacheType::WriteBack,
             7 => MtrrMemoryCacheType::Invalid,
-            _ => panic!("Invalid MTRR_MEMORY_CACHE_TYPE value: {}", value),
+            _ => panic!("Invalid MTRR_MEMORY_CACHE_TYPE value: {value}"),
         }
     }
 }

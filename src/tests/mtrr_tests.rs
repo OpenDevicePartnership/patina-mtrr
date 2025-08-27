@@ -590,7 +590,7 @@ fn unit_test_invalid_memory_layouts() {
     let iterations = 1;
     for system_parameter in &M_SYSTEM_PARAMETERS {
         for i in 0..iterations {
-            println!("Iteration: {}", i);
+            println!("Iteration: {i}");
             unit_test_invalid_memory_layouts_impl(system_parameter);
         }
     }
@@ -664,7 +664,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes() {
     let iterations = 1;
     for system_parameter in &M_SYSTEM_PARAMETERS {
         for i in 0..iterations {
-            println!("Iteration: {}", i);
+            println!("Iteration: {i}");
             unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_settings(system_parameter);
             unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr_settings(system_parameter);
         }
@@ -695,7 +695,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_setti
     println!(
         "------------unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_settings begin------------"
     );
-    println!("system_parameter: {:?}", system_parameter);
+    println!("system_parameter: {system_parameter:?}");
 
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(system_parameter);
@@ -739,7 +739,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_setti
     //   let raw_mtrr_range_count = raw_mtrr_range.len() as u32;
     // //     // TESTCODE end
 
-    println!("--- Raw MTRR Range [{}]---", raw_mtrr_range_count);
+    println!("--- Raw MTRR Range [{raw_mtrr_range_count}]---");
     dump_memory_ranges(&raw_mtrr_range, raw_mtrr_range_count as usize);
 
     get_effective_memory_ranges(
@@ -751,7 +751,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_setti
         &mut expected_memory_ranges_count,
     );
 
-    println!("--- Expected Memory Ranges [{}] ---", expected_memory_ranges_count);
+    println!("--- Expected Memory Ranges [{expected_memory_ranges_count}] ---");
     dump_memory_ranges(&expected_memory_ranges, expected_memory_ranges_count);
 
     let default_mem_type = system_parameter.default_cache_type as u8;
@@ -763,7 +763,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_setti
     for index in 0..expected_memory_ranges_count {
         println!("--------------------------------------------------");
         println!("--------------------------------------------------");
-        println!("{} calling set_memory_attribute", index);
+        println!("{index} calling set_memory_attribute");
 
         // println!("Before: \n{}", mtrr_setting);
         status = mtrrlib.set_memory_attribute(
@@ -790,12 +790,12 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_setti
         &mut actual_variable_mtrr_usage,
     );
 
-    println!("--- System Parameter --- \n{:?}", system_parameter);
-    println!("--- Raw MTRR Range [{}]---", raw_mtrr_range_count);
+    println!("--- System Parameter --- \n{system_parameter:?}");
+    println!("--- Raw MTRR Range [{raw_mtrr_range_count}] ---");
     dump_memory_ranges(&raw_mtrr_range, raw_mtrr_range_count as usize);
-    println!("--- Actual Memory Ranges [{}] ---", actual_memory_ranges_count);
+    println!("--- Actual Memory Ranges [{actual_memory_ranges_count}] ---");
     dump_memory_ranges(&actual_memory_ranges, actual_memory_ranges_count);
-    println!("--- Expected Memory Ranges [{}] ---", expected_memory_ranges_count);
+    println!("--- Expected Memory Ranges [{expected_memory_ranges_count}] ---");
     dump_memory_ranges(&expected_memory_ranges, expected_memory_ranges_count);
     verify_memory_ranges(
         &expected_memory_ranges[..],
@@ -846,7 +846,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr
     println!(
         "------------unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr_settings begin------------"
     );
-    println!("system_parameter: {:?}", system_parameter);
+    println!("system_parameter: {system_parameter:?}");
 
     let mut hal = MockHal::new();
     hal.initialize_mtrr_regs(system_parameter);
@@ -893,7 +893,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr
     //   raw_mtrr_range_count = raw_mtrr_range.len() as u32;
     //     // TESTCODE end
 
-    println!("--- Raw MTRR Range [{}]---", raw_mtrr_range_count);
+    println!("--- Raw MTRR Range [{raw_mtrr_range_count}]---");
     dump_memory_ranges(&raw_mtrr_range, raw_mtrr_range_count as usize);
 
     get_effective_memory_ranges(
@@ -905,13 +905,13 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr
         &mut expected_memory_ranges_count,
     );
 
-    println!("--- Expected Memory Ranges [{}] ---", expected_memory_ranges_count);
+    println!("--- Expected Memory Ranges [{expected_memory_ranges_count}] ---");
     dump_memory_ranges(&expected_memory_ranges, expected_memory_ranges_count);
 
     for index in 0..expected_memory_ranges_count {
         println!("--------------------------------------------------");
         println!("--------------------------------------------------");
-        println!("{} calling set_memory_attribute", index);
+        println!("{index} calling set_memory_attribute");
 
         // println!("Before: \n{}", mtrr_setting);
         status = mtrrlib.set_memory_attribute(
@@ -939,11 +939,11 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr
         &mut actual_variable_mtrr_usage,
     );
 
-    println!("--- Raw MTRR Range [{}]---", raw_mtrr_range_count);
+    println!("--- Raw MTRR Range [{raw_mtrr_range_count}] ---");
     dump_memory_ranges(&raw_mtrr_range, raw_mtrr_range_count as usize);
-    println!("--- Actual Memory Ranges [{}] ---", actual_memory_ranges_count);
+    println!("--- Actual Memory Ranges [{actual_memory_ranges_count}] ---");
     dump_memory_ranges(&actual_memory_ranges, actual_memory_ranges_count);
-    println!("--- Expected Memory Ranges [{}] ---", expected_memory_ranges_count);
+    println!("--- Expected Memory Ranges [{expected_memory_ranges_count}] ---");
     dump_memory_ranges(&expected_memory_ranges, expected_memory_ranges_count);
     verify_memory_ranges(
         &expected_memory_ranges[..],
