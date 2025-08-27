@@ -1890,11 +1890,9 @@ impl<H: Hal> MtrrLib<H> {
 
     ///  This function attempts to set the attributes for a memory range.
     ///
-    ///  - `base_address` -        The physical address that is the start
-    ///                              address of a memory range.
-    ///  - `length` -              The size in bytes of the memory range.
-    ///  - `attributes` -          The bit mask of attributes to set for the
-    ///                                 memory range.
+    ///  - `base_address`: The physical address that is the start address of a memory range.
+    ///  - `length`: The size in bytes of the memory range.
+    ///  - `attributes`: The bit mask of attributes to set for the memory range.
     pub fn set_memory_attribute_impl(
         &mut self,
         base_address: u64,
