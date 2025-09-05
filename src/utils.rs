@@ -1,3 +1,11 @@
+//! Utility functions for bit manipulation and arithmetic used throughout the MTRR library.
+//!
+//! ## License
+//!
+//! Copyright (C) Microsoft Corporation. All rights reserved.
+//!
+//! SPDX-License-Identifier: Apache-2.0
+//!
 pub fn lshift_u64(value: u64, shift: u32) -> u64 {
     value << shift
 }

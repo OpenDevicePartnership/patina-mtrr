@@ -1,3 +1,12 @@
+//! Core implementation of the MTRR (Memory Type Range Registers) library, including logic for reading, writing, and
+//! managing MTRRs.
+//!
+//! ## License
+//!
+//! Copyright (C) Microsoft Corporation. All rights reserved.
+//!
+//! SPDX-License-Identifier: Apache-2.0
+//!
 // Below clippy override is enforced to match the Rust code with the C MtrrLib
 // implementation
 #![allow(clippy::needless_range_loop)]

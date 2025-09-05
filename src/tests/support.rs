@@ -1,3 +1,11 @@
+//! Test support utilities and helpers for MTRR library unit tests.
+//!
+//! ## License
+//!
+//! Copyright (C) Microsoft Corporation. All rights reserved.
+//!
+//! SPDX-License-Identifier: Apache-2.0
+//!
 #![allow(clippy::needless_range_loop)]
 #![allow(clippy::manual_memcpy)]
 use crate::structs::{

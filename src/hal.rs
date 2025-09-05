@@ -1,3 +1,12 @@
+//! Hardware Abstraction Layer (HAL) trait and implementations for accessing CPU registers and features required by
+//! the MTRR library.
+//!
+//! ## License
+//!
+//! Copyright (C) Microsoft Corporation. All rights reserved.
+//!
+//! SPDX-License-Identifier: Apache-2.0
+//!
 #[allow(unused_imports)]
 use core::arch::asm;
 use core::arch::x86_64::__cpuid;

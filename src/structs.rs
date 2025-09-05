@@ -1,3 +1,11 @@
+//! Data structures and bitfield definitions for MTRR (Memory Type Range Registers) management.
+//!
+//! ## License
+//!
+//! Copyright (C) Microsoft Corporation. All rights reserved.
+//!
+//! SPDX-License-Identifier: Apache-2.0
+//!
 use bitfield_struct::bitfield;
 
 //

@@ -1,3 +1,11 @@
+//! Mock implementation of the HAL trait for use in unit tests, simulating hardware behavior for MTRR operations.
+//!
+//! ## License
+//!
+//! Copyright (C) Microsoft Corporation. All rights reserved.
+//!
+//! SPDX-License-Identifier: Apache-2.0
+//!
 #![allow(unused_imports)]
 #![allow(clippy::needless_range_loop)]
 use core::arch::asm;
