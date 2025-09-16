@@ -1228,24 +1228,27 @@ impl<H: Hal> MtrrLib<H> {
             assert!(base == MTRR_LIB_FIXED_MTRR_TABLE[msr_index].base_address as u64);
 
             for index in 0..size_of::<u64>() {
-                let memory_type: MtrrMemoryCacheType = unsafe {
-                    let mem_type = *(&fixed.mtrr[msr_index] as *const u64 as *const u8).add(index);
-                    mem_type.into()
-                };
+                let mem_type_raw = unsafe { *(&fixed.mtrr[msr_index] as *const u64 as *const u8).add(index) };
 
-                let status = self.mtrr_lib_set_memory_type(
-                    ranges,
-                    range_capacity,
-                    range_count,
-                    base,
-                    MTRR_LIB_FIXED_MTRR_TABLE[msr_index].length as u64,
-                    memory_type,
-                );
+                // Only apply fixed MTRR settings if they are actually programmed (non-zero)
+                // When fixed MTRR value is 0, it means "not programmed" and should not override default type
+                if mem_type_raw != 0 {
+                    let memory_type: MtrrMemoryCacheType = mem_type_raw.into();
 
-                if let Err(status) = status
-                    && status == MtrrError::OutOfResources
-                {
-                    return Err(MtrrError::OutOfResources);
+                    let status = self.mtrr_lib_set_memory_type(
+                        ranges,
+                        range_capacity,
+                        range_count,
+                        base,
+                        MTRR_LIB_FIXED_MTRR_TABLE[msr_index].length as u64,
+                        memory_type,
+                    );
+
+                    if let Err(status) = status
+                        && status == MtrrError::OutOfResources
+                    {
+                        return Err(MtrrError::OutOfResources);
+                    }
                 }
 
                 base += MTRR_LIB_FIXED_MTRR_TABLE[msr_index].length as u64;

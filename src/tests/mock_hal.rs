@@ -8,36 +8,26 @@
 //!
 #![allow(unused_imports)]
 #![allow(clippy::needless_range_loop)]
-use core::arch::asm;
+
 use core::arch::x86_64::CpuidResult;
 
 use crate::hal::Hal;
 use crate::mtrr::MtrrLib;
-use crate::structs::CPUID_EXTENDED_FUNCTION;
-use crate::structs::CPUID_SIGNATURE;
-use crate::structs::CPUID_VERSION_INFO;
-use crate::structs::CPUID_VIR_PHY_ADDRESS_SIZE;
-use crate::structs::CpuidStructuredExtendedFeatureFlagsEcx;
-use crate::structs::CpuidVersionInfoEdx;
-use crate::structs::CpuidVirPhyAddressSizeEax;
-use crate::structs::MSR_IA32_MTRR_DEF_TYPE;
-use crate::structs::MSR_IA32_MTRR_PHYSBASE0;
-use crate::structs::MSR_IA32_MTRR_PHYSMASK0;
-use crate::structs::MSR_IA32_MTRRCAP;
-use crate::structs::MSR_IA32_TME_ACTIVATE;
-use crate::structs::MTRR_NUMBER_OF_FIXED_MTRR;
-use crate::structs::MTRR_NUMBER_OF_VARIABLE_MTRR;
-use crate::structs::MsrIa32MtrrDefType;
-use crate::structs::MsrIa32MtrrPhysbaseRegister;
-use crate::structs::MsrIa32MtrrPhysmaskRegister;
-use crate::structs::MsrIa32MtrrcapRegister;
-use crate::structs::MsrIa32TmeActivateRegister;
-use crate::structs::MtrrMemoryCacheType;
-use crate::tests::M_FIXED_MTRRS_INDEX;
+use crate::structs::{
+    CPUID_EXTENDED_FUNCTION, CPUID_SIGNATURE, CPUID_VERSION_INFO, CPUID_VIR_PHY_ADDRESS_SIZE,
+    CpuidStructuredExtendedFeatureFlagsEcx, CpuidVersionInfoEdx, CpuidVirPhyAddressSizeEax, MSR_IA32_MTRR_DEF_TYPE,
+    MSR_IA32_MTRR_PHYSBASE0, MSR_IA32_MTRR_PHYSMASK0, MSR_IA32_MTRRCAP, MSR_IA32_TME_ACTIVATE,
+    MTRR_NUMBER_OF_FIXED_MTRR, MTRR_NUMBER_OF_VARIABLE_MTRR, MsrIa32MtrrDefType, MsrIa32MtrrPhysbaseRegister,
+    MsrIa32MtrrPhysmaskRegister, MsrIa32MtrrcapRegister, MsrIa32TmeActivateRegister, MtrrMemoryCacheType,
+};
+use crate::tests::config::{FIXED_MTRR_INDICES, MtrrLibSystemParameter};
 
-use super::MtrrLibSystemParameter;
-
-pub struct MockHal {
+/// Mock HAL implementation for unit testing.
+///
+/// This provides a simulated hardware environment that allows testing MTRR operations
+/// without requiring actual hardware access.
+#[derive(Debug, Clone)]
+pub(crate) struct MockHal {
     fixed_mtrrs_value: [u64; MTRR_NUMBER_OF_FIXED_MTRR],
     variable_mtrrs_phys_base: [MsrIa32MtrrPhysbaseRegister; MTRR_NUMBER_OF_VARIABLE_MTRR],
     variable_mtrrs_phys_mask: [MsrIa32MtrrPhysmaskRegister; MTRR_NUMBER_OF_VARIABLE_MTRR],
@@ -48,31 +38,36 @@ pub struct MockHal {
     cpuid_extended_feature_flags_ecx: CpuidStructuredExtendedFeatureFlagsEcx,
     cpuid_vir_phy_address_size_eax: CpuidVirPhyAddressSizeEax,
 
-    // Mocked hal functions state.
+    // Mocked HAL functions state
     interrupt_state: bool,
     cr3: u64,
     cr4: u64,
 }
 
 impl MockHal {
-    pub fn new() -> Self {
+    /// Creates a new mock HAL with default register values.
+    pub(crate) fn new() -> Self {
         Self {
-            fixed_mtrrs_value: Default::default(),
-            variable_mtrrs_phys_base: Default::default(),
-            variable_mtrrs_phys_mask: Default::default(),
+            fixed_mtrrs_value: [0; MTRR_NUMBER_OF_FIXED_MTRR],
+            variable_mtrrs_phys_base: [MsrIa32MtrrPhysbaseRegister::default(); MTRR_NUMBER_OF_VARIABLE_MTRR],
+            variable_mtrrs_phys_mask: [MsrIa32MtrrPhysmaskRegister::default(); MTRR_NUMBER_OF_VARIABLE_MTRR],
             def_type_msr: MsrIa32MtrrDefType::new().with_mem_type(MtrrMemoryCacheType::Uncacheable as u8),
-            mtrr_cap_msr: Default::default(),
-            tme_activate_msr: Default::default(),
-            cpuid_version_info_edx: Default::default(),
-            cpuid_extended_feature_flags_ecx: Default::default(),
-            cpuid_vir_phy_address_size_eax: Default::default(),
+            mtrr_cap_msr: MsrIa32MtrrcapRegister::default(),
+            tme_activate_msr: MsrIa32TmeActivateRegister::default(),
+            cpuid_version_info_edx: CpuidVersionInfoEdx::default(),
+            cpuid_extended_feature_flags_ecx: CpuidStructuredExtendedFeatureFlagsEcx::default(),
+            cpuid_vir_phy_address_size_eax: CpuidVirPhyAddressSizeEax::default(),
             interrupt_state: true,
             cr3: 0,
             cr4: 0,
         }
     }
 
-    pub fn initialize_mtrr_regs(&mut self, system_parameter: &MtrrLibSystemParameter) {
+    /// Initializes MTRR registers based on the provided system parameters.
+    ///
+    /// This method configures the mock hardware state to match the specified
+    /// system capabilities and default values.
+    pub(crate) fn initialize_mtrr_regs(&mut self, system_parameter: &MtrrLibSystemParameter) {
         for value in &mut self.fixed_mtrrs_value {
             *value = system_parameter.default_cache_type as u64;
         }
@@ -161,12 +156,14 @@ impl Hal for MockHal {
     fn cpu_flush_tlb(&mut self) {}
 
     fn asm_read_msr64(&self, msr_index: u32) -> u64 {
-        for i in 0..self.fixed_mtrrs_value.len() {
-            if msr_index == M_FIXED_MTRRS_INDEX[i] {
+        // 1. Check fixed MTRRs
+        for (i, &fixed_msr_index) in FIXED_MTRR_INDICES.iter().enumerate() {
+            if msr_index == fixed_msr_index {
                 return self.fixed_mtrrs_value[i];
             }
         }
 
+        // 2. Check variable MTRRs
         if (msr_index >= MSR_IA32_MTRR_PHYSBASE0)
             && (msr_index <= (MSR_IA32_MTRR_PHYSMASK0 + (MTRR_NUMBER_OF_VARIABLE_MTRR as u32 * 2)))
         {
@@ -179,30 +176,25 @@ impl Hal for MockHal {
             }
         }
 
-        if msr_index == MSR_IA32_MTRR_DEF_TYPE {
-            return self.def_type_msr.into();
+        // 3. Check MSRs
+        match msr_index {
+            MSR_IA32_MTRR_DEF_TYPE => self.def_type_msr.into(),
+            MSR_IA32_MTRRCAP => self.mtrr_cap_msr.into_bits() as u64,
+            MSR_IA32_TME_ACTIVATE => self.tme_activate_msr.into(),
+            _ => unreachable!("Unsupported MSR index: 0x{:x}", msr_index),
         }
-
-        if msr_index == MSR_IA32_MTRRCAP {
-            return self.mtrr_cap_msr.into_bits() as u64;
-        }
-
-        if msr_index == MSR_IA32_TME_ACTIVATE {
-            return self.tme_activate_msr.into();
-        }
-
-        // Should never fall through to here
-        unreachable!();
     }
 
     fn asm_write_msr64(&mut self, msr_index: u32, value: u64) {
-        for i in 0..self.fixed_mtrrs_value.len() {
-            if msr_index == M_FIXED_MTRRS_INDEX[i] {
+        // 1. Check fixed MTRRs
+        for (i, &fixed_msr_index) in FIXED_MTRR_INDICES.iter().enumerate() {
+            if msr_index == fixed_msr_index {
                 self.fixed_mtrrs_value[i] = value;
                 return;
             }
         }
 
+        // 2. Check variable MTRRs
         if (msr_index >= MSR_IA32_MTRR_PHYSBASE0)
             && (msr_index <= (MSR_IA32_MTRR_PHYSMASK0 + (MTRR_NUMBER_OF_VARIABLE_MTRR as u32 * 2)))
         {
@@ -217,22 +209,20 @@ impl Hal for MockHal {
             }
         }
 
-        if msr_index == MSR_IA32_MTRR_DEF_TYPE {
-            let def_type = MsrIa32MtrrDefType::from_bits(value);
-            if def_type.fe() {
-                assert!(self.mtrr_cap_msr.fix());
+        // 3. Check MSRs
+        match msr_index {
+            MSR_IA32_MTRR_DEF_TYPE => {
+                let def_type = MsrIa32MtrrDefType::from_bits(value);
+                if def_type.fe() {
+                    assert!(self.mtrr_cap_msr.fix());
+                }
+                self.def_type_msr = def_type;
             }
-            self.def_type_msr = def_type;
-            return;
+            MSR_IA32_MTRRCAP => {
+                self.mtrr_cap_msr = MsrIa32MtrrcapRegister::from_bits((value & 0xFFFF_FFFF) as u32);
+            }
+            _ => unreachable!("Unsupported MSR index: 0x{:x}", msr_index),
         }
-
-        if msr_index == MSR_IA32_MTRRCAP {
-            self.mtrr_cap_msr = MsrIa32MtrrcapRegister::from_bits((value & 0xFFFF_FFFF) as u32);
-            return;
-        }
-
-        // Should never fall through to here
-        unreachable!();
     }
 
     fn asm_msr_and_then_or_64(&mut self, index: u32, and_data: u64, or_data: u64) -> u64 {
@@ -278,6 +268,13 @@ impl Hal for MockHal {
     }
 }
 
-pub fn create_mtrr_lib_with_mock_hal(hal: MockHal, pcd_cpu_number_of_reserved_variable_mtrrs: u32) -> MtrrLib<MockHal> {
-    MtrrLib::new(hal, pcd_cpu_number_of_reserved_variable_mtrrs)
+/// A convenience function to create an MTRR library instance with the provided mock HAL.
+pub(crate) fn create_mtrr_lib_with_mock_hal(hal: MockHal, reserved_variable_mtrrs: u32) -> MtrrLib<MockHal> {
+    MtrrLib::new(hal, reserved_variable_mtrrs)
+}
+
+impl Default for MockHal {
+    fn default() -> Self {
+        Self::new()
+    }
 }

@@ -5,144 +5,120 @@
 //! Copyright (c) Microsoft Corporation.
 //!
 //! SPDX-License-Identifier: Apache-2.0
-//!
+
 #![allow(clippy::needless_range_loop)]
 #![allow(clippy::manual_memcpy)]
+
 use crate::structs::{
     MTRR_NUMBER_OF_FIXED_MTRR, MTRR_NUMBER_OF_VARIABLE_MTRR, MsrIa32MtrrPhysbaseRegister, MsrIa32MtrrPhysmaskRegister,
-    MtrrMemoryCacheType, MtrrMemoryRange, MtrrSettings, MtrrVariableSetting, SIZE_1MB,
+    MtrrMemoryCacheType, MtrrMemoryRange, MtrrSettings, MtrrVariableSetting,
 };
+use crate::tests::fixtures::{RangeGenerator, TestSequence};
 
-use rand::Rng;
-
-//
-//  Collect the test result.
-//
-//  @param DefaultType          Default memory type.
-//  @param PhysicalAddressBits  Physical address bits.
-//  @param VariableMtrrCount    Count of variable MTRRs.
-//  @param Mtrrs                MTRR settings to collect from.
-//  @param Ranges               Return the memory ranges.
-//  @param RangeCount           Return the count of memory ranges.
-//  @param MtrrCount            Return the count of variable MTRRs being used.
-//
-pub fn collect_test_result(
+/// Test result collector for MTRR operations.
+pub(crate) struct TestResultCollector {
     default_type: MtrrMemoryCacheType,
     physical_address_bits: u32,
     variable_mtrr_count: u32,
-    mtrrs: &MtrrSettings,
-    ranges: &mut [MtrrMemoryRange],
-    range_count: &mut usize,
-    mtrr_count: &mut u32,
-) {
-    let mut raw_memory_ranges = [MtrrMemoryRange::default(); MTRR_NUMBER_OF_VARIABLE_MTRR];
-    let mtrr_valid_bits_mask = (1u64 << physical_address_bits) - 1;
-    let mtrr_valid_address_mask = mtrr_valid_bits_mask & !0xFFFu64;
+}
 
-    assert!(variable_mtrr_count <= mtrrs.variables.mtrr.len() as u32);
+impl TestResultCollector {
+    /// Create a new test result collector.
+    pub(crate) fn new(default_type: MtrrMemoryCacheType, physical_address_bits: u32, variable_mtrr_count: u32) -> Self {
+        Self { default_type, physical_address_bits, variable_mtrr_count }
+    }
 
-    *mtrr_count = 0;
-    for index in 0..variable_mtrr_count as usize {
-        let mask = MsrIa32MtrrPhysmaskRegister::from_bits(mtrrs.variables.mtrr[index].mask);
-        if mask.v() {
-            let base = MsrIa32MtrrPhysbaseRegister::from_bits(mtrrs.variables.mtrr[index].base);
-            raw_memory_ranges[*mtrr_count as usize].base_address =
-                mtrrs.variables.mtrr[index].base & mtrr_valid_address_mask;
-            raw_memory_ranges[*mtrr_count as usize].mem_type = MtrrMemoryCacheType::from(base.mem_type());
-            raw_memory_ranges[*mtrr_count as usize].length =
-                ((!(mtrrs.variables.mtrr[index].mask & mtrr_valid_address_mask)) & mtrr_valid_bits_mask) + 1;
-            *mtrr_count += 1;
+    /// Collect test results, returning the number of effective memory ranges and valid MTRRs.
+    pub(crate) fn collect_results(&self, mtrrs: &MtrrSettings, ranges: &mut [MtrrMemoryRange]) -> (usize, u32) {
+        let mut raw_memory_ranges = [MtrrMemoryRange::default(); MTRR_NUMBER_OF_VARIABLE_MTRR];
+        let mtrr_valid_bits_mask = (1u64 << self.physical_address_bits) - 1;
+        let mtrr_valid_address_mask = mtrr_valid_bits_mask & !0xFFFu64;
+
+        assert!(self.variable_mtrr_count <= mtrrs.variables.mtrr.len() as u32);
+
+        let mut mtrr_count = 0;
+        for index in 0..self.variable_mtrr_count as usize {
+            let mask = MsrIa32MtrrPhysmaskRegister::from_bits(mtrrs.variables.mtrr[index].mask);
+            if mask.v() {
+                let base = MsrIa32MtrrPhysbaseRegister::from_bits(mtrrs.variables.mtrr[index].base);
+                raw_memory_ranges[mtrr_count].base_address = mtrrs.variables.mtrr[index].base & mtrr_valid_address_mask;
+                raw_memory_ranges[mtrr_count].mem_type = MtrrMemoryCacheType::from(base.mem_type());
+                raw_memory_ranges[mtrr_count].length =
+                    ((!(mtrrs.variables.mtrr[index].mask & mtrr_valid_address_mask)) & mtrr_valid_bits_mask) + 1;
+                mtrr_count += 1;
+            }
         }
-    }
 
-    get_effective_memory_ranges(
-        default_type,
-        physical_address_bits,
-        &raw_memory_ranges,
-        *mtrr_count as usize,
-        ranges,
-        range_count,
-    );
+        let mut range_count = ranges.len();
+        get_effective_memory_ranges(
+            self.default_type,
+            self.physical_address_bits,
+            &raw_memory_ranges,
+            mtrr_count,
+            ranges,
+            &mut range_count,
+        );
+
+        (range_count, mtrr_count as u32)
+    }
 }
 
-//
-//  Return a 32bit random number.
-//
-//  @param Start  Start of the random number range.
-//  @param Limit  Limit of the random number range.
-//  @return 32bit random number
-//
-pub fn random32(start: u32, limit: u32) -> u32 {
-    let mut rng = rand::thread_rng();
-    rng.gen_range(start..limit)
+/// Deterministic test value generator.
+#[derive(Debug, Clone)]
+pub(crate) struct DeterministicGenerator {
+    sequence: TestSequence,
 }
 
-//
-//  Return a 64bit random number.
-//
-//  @param Start  Start of the random number range.
-//  @param Limit  Limit of the random number range.
-//  @return 64bit random number
-//
-pub fn random64(start: u64, limit: u64) -> u64 {
-    let mut rng = rand::thread_rng();
-    rng.gen_range(start..limit)
+impl DeterministicGenerator {
+    /// Creates a new deterministic generator starting at the given index.
+    pub(crate) fn new(start_index: usize) -> Self {
+        Self { sequence: TestSequence::new(start_index) }
+    }
+
+    /// Generates a 32-bit test value.
+    pub(crate) fn next_u32(&mut self, start: u32, limit: u32) -> u32 {
+        self.sequence.next_u32(start, limit)
+    }
+
+    /// Generates a 64-bit test value.
+    pub(crate) fn next_u64(&mut self, start: u64, limit: u64) -> u64 {
+        self.sequence.next_u64(start, limit)
+    }
+
+    /// Generates a cache type.
+    pub(crate) fn next_cache_type(&mut self) -> MtrrMemoryCacheType {
+        self.sequence.next_cache_type()
+    }
 }
 
-//
-//  Generate random MTRR BASE/MASK for a specified type.
-//
-//  @param PhysicalAddressBits Physical address bits.
-//  @param CacheType           Cache type.
-//  @param MtrrPair            Return the random MTRR.
-//  @param MtrrMemoryRange     Return the random memory range.
-//
-pub fn generate_random_mtrr_pair(
-    physical_address_bits: u32,
-    cache_type: MtrrMemoryCacheType,
-    mtrr_pair: Option<&mut MtrrVariableSetting>,
-    mtrr_memory_range: Option<&mut MtrrMemoryRange>,
-) {
-    let max_physical_address = 1u64 << physical_address_bits;
-    let mut rng = rand::thread_rng();
-    let mut size_shift;
-    let mut range_size;
-    let mut base_shift;
-    let mut random_boundary;
-    let mut range_base;
+/// MTRR pair generator for creating test configurations.
+pub(crate) struct MtrrPairGenerator {
+    range_generator: RangeGenerator,
+}
 
-    loop {
-        size_shift = rng.gen_range(12..physical_address_bits);
-        range_size = 1u64 << size_shift;
-
-        base_shift = rng.gen_range(size_shift..physical_address_bits);
-        random_boundary = rng.gen_range(0..(1u64 << (physical_address_bits - base_shift)));
-        range_base = random_boundary << base_shift;
-
-        if range_base >= SIZE_1MB as u64 && range_base < max_physical_address {
-            break;
-        }
+impl MtrrPairGenerator {
+    /// Creates a new MTRR pair generator.
+    pub(crate) fn new(start_index: usize) -> Self {
+        Self { range_generator: RangeGenerator::new(TestSequence::new(start_index)) }
     }
 
-    let phys_base_phy_mask_valid_bits_mask = (max_physical_address - 1) & 0xfffffffffffff000u64;
-
-    let mut phys_base;
-    phys_base = MsrIa32MtrrPhysbaseRegister::from_bits(range_base & phys_base_phy_mask_valid_bits_mask);
-    phys_base.set_mem_type(cache_type as u8);
-
-    let mut phys_mask;
-    phys_mask = MsrIa32MtrrPhysmaskRegister::from_bits((!range_size + 1) & phys_base_phy_mask_valid_bits_mask);
-    phys_mask.set_v(true);
-
-    if let Some(mtrr_pair) = mtrr_pair {
-        mtrr_pair.base = phys_base.into();
-        mtrr_pair.mask = phys_mask.into();
+    /// Generates an MTRR pair for the given parameters.
+    pub(crate) fn generate_pair(
+        &mut self,
+        physical_address_bits: u32,
+        cache_type: MtrrMemoryCacheType,
+    ) -> (Option<MtrrVariableSetting>, Option<MtrrMemoryRange>) {
+        let (mtrr_pair, memory_range) = self.range_generator.generate_mtrr_pair(physical_address_bits, cache_type);
+        (Some(mtrr_pair), Some(memory_range))
     }
 
-    if let Some(mtrr_memory_range) = mtrr_memory_range {
-        mtrr_memory_range.base_address = range_base;
-        mtrr_memory_range.length = range_size;
-        mtrr_memory_range.mem_type = cache_type;
+    /// Generates multiple valid and configurable MTRR pairs.
+    pub(crate) fn generate_multiple_pairs(
+        &mut self,
+        physical_address_bits: u32,
+        type_counts: crate::tests::fixtures::MemoryTypeCounts,
+    ) -> Vec<MtrrMemoryRange> {
+        self.range_generator.generate_non_overlapping_ranges(physical_address_bits, type_counts)
     }
 }
 
@@ -156,131 +132,15 @@ pub fn generate_random_mtrr_pair(
 //  @return TRUE when overlap exists.
 //
 fn ranges_overlap(range: &MtrrMemoryRange, ranges: &[MtrrMemoryRange], count: usize) -> bool {
-    let mut count = count;
-    // Two ranges overlap when:
-    // 1. range#2.base is in the middle of range#1
-    // 2. range#1.base is in the middle of range#2
-    while count != 0 {
-        count -= 1;
-
-        if (range.base_address <= ranges[count].base_address
-            && ranges[count].base_address < range.base_address + range.length)
-            || (ranges[count].base_address <= range.base_address
-                && range.base_address < ranges[count].base_address + ranges[count].length)
+    for i in 0..count {
+        if (range.base_address <= ranges[i].base_address && ranges[i].base_address < range.base_address + range.length)
+            || (ranges[i].base_address <= range.base_address
+                && range.base_address < ranges[i].base_address + ranges[i].length)
         {
             return true;
         }
     }
-
     false
-}
-
-//
-//  Generate random MTRRs.
-//
-//  @param PhysicalAddressBits  Physical address bits.
-//  @param RawMemoryRanges      Return the randomly generated MTRRs.
-//  @param UcCount              Count of Uncacheable MTRRs.
-//  @param WtCount              Count of Write Through MTRRs.
-//  @param WbCount              Count of Write Back MTRRs.
-//  @param WpCount              Count of Write Protected MTRRs.
-//  @param WcCount              Count of Write Combine MTRRs.
-//
-pub fn generate_valid_and_configurable_mtrr_pairs(
-    physical_address_bits: u32,
-    raw_memory_ranges: &mut [MtrrMemoryRange],
-    uc_count: u32,
-    wt_count: u32,
-    wb_count: u32,
-    wp_count: u32,
-    wc_count: u32,
-) {
-    // 1. Generate UC, WT, WB in order.
-    for index in 0..uc_count {
-        generate_random_mtrr_pair(
-            physical_address_bits,
-            MtrrMemoryCacheType::Uncacheable,
-            None,
-            Some(&mut raw_memory_ranges[index as usize]),
-        );
-    }
-
-    for index in uc_count..(uc_count + wt_count) {
-        generate_random_mtrr_pair(
-            physical_address_bits,
-            MtrrMemoryCacheType::WriteThrough,
-            None,
-            Some(&mut raw_memory_ranges[index as usize]),
-        );
-    }
-
-    for index in (uc_count + wt_count)..(uc_count + wt_count + wb_count) {
-        generate_random_mtrr_pair(
-            physical_address_bits,
-            MtrrMemoryCacheType::WriteBack,
-            None,
-            Some(&mut raw_memory_ranges[index as usize]),
-        );
-    }
-
-    // 2. Generate WP MTRR and DO NOT overlap with WT, WB.
-    for index in (uc_count + wt_count + wb_count)..(uc_count + wt_count + wb_count + wp_count) {
-        generate_random_mtrr_pair(
-            physical_address_bits,
-            MtrrMemoryCacheType::WriteProtected,
-            None,
-            Some(&mut raw_memory_ranges[index as usize]),
-        );
-        while ranges_overlap(
-            &raw_memory_ranges[index as usize],
-            &raw_memory_ranges[uc_count as usize..],
-            (wt_count + wb_count) as usize,
-        ) {
-            generate_random_mtrr_pair(
-                physical_address_bits,
-                MtrrMemoryCacheType::WriteProtected,
-                None,
-                Some(&mut raw_memory_ranges[index as usize]),
-            );
-        }
-    }
-
-    // 3. Generate WC MTRR and DO NOT overlap with WT, WB, WP.
-    for index in (uc_count + wt_count + wb_count + wp_count)..(uc_count + wt_count + wb_count + wp_count + wc_count) {
-        generate_random_mtrr_pair(
-            physical_address_bits,
-            MtrrMemoryCacheType::WriteCombining,
-            None,
-            Some(&mut raw_memory_ranges[index as usize]),
-        );
-        while ranges_overlap(
-            &raw_memory_ranges[index as usize],
-            &raw_memory_ranges[uc_count as usize..],
-            (wt_count + wb_count + wp_count) as usize,
-        ) {
-            generate_random_mtrr_pair(
-                physical_address_bits,
-                MtrrMemoryCacheType::WriteCombining,
-                None,
-                Some(&mut raw_memory_ranges[index as usize]),
-            );
-        }
-    }
-}
-
-//
-//  Return a random memory cache type.
-//
-pub fn generate_random_cache_type() -> MtrrMemoryCacheType {
-    let cache_types = [
-        MtrrMemoryCacheType::Uncacheable,
-        MtrrMemoryCacheType::WriteCombining,
-        MtrrMemoryCacheType::WriteThrough,
-        MtrrMemoryCacheType::WriteProtected,
-        MtrrMemoryCacheType::WriteBack,
-    ];
-    let mut rng = rand::thread_rng();
-    cache_types[rng.gen_range(0..cache_types.len())]
 }
 
 //
@@ -504,10 +364,6 @@ fn collect_endpoints(endpoints: &mut Vec<u64>, raw_memory_ranges: &[MtrrMemoryRa
     endpoints.sort_unstable();
     endpoints.dedup();
     endpoints.shrink_to_fit();
-
-    // for i in 0..endpoints.len() {
-    //     println!("#### Endpoints[{}] = {:x} \n", i, endpoints[i]);
-    // }
 }
 
 //
@@ -524,7 +380,7 @@ fn collect_endpoints(endpoints: &mut Vec<u64>, raw_memory_ranges: &[MtrrMemoryRa
 //  @param MemoryRangeCount     Count of memory ranges.
 //
 #[allow(clippy::slow_vector_initialization)]
-pub fn get_effective_memory_ranges(
+pub(crate) fn get_effective_memory_ranges(
     default_type: MtrrMemoryCacheType,
     physical_address_bits: u32,
     raw_memory_ranges: &[MtrrMemoryRange],
@@ -540,51 +396,6 @@ pub fn get_effective_memory_ranges(
         return;
     }
 
-    // Input: Raw memory ranges example: Unsorted, can be overlapping, do not
-    // cover full memory range.
-
-    //
-    // { 0x0000014000000000, 0x0000000400000000, Uncacheable },
-    // { 0x0000015800000000, 0x0000000800000000, Uncacheable },
-    // { 0x000001dcdfa58000, 0x0000000000001000, Uncacheable },
-    // { 0x0000001c00000000, 0x0000000000100000, WriteThrough },
-    // { 0x0000007600000000, 0x0000000100000000, WriteThrough },
-    // { 0x0000015600000000, 0x0000000000800000, WriteProtected },
-    // { 0x0000018000000000, 0x0000004000000000, WriteProtected },
-    // { 0x0000017848000000, 0x0000000000800000, WriteCombining },
-    // { 0x000000f600000000, 0x0000000000020000, WriteCombining },
-    // { 0x0000003400000000, 0x0000000001000000, WriteCombining },
-    // { 0x000000e000000000, 0x0000000400000000, WriteCombining },
-    //
-
-    // Output: Sorted, non-overlapping, covers full memory range, honors the
-    // memory type passed.
-
-    //
-    // { 0x0000000000000000, 0x0000001c00000000, WriteBack },
-    // { 0x0000001c00000000, 0x0000000000100000, WriteThrough },
-    // { 0x0000001c00100000, 0x00000017fff00000, WriteBack },
-    // { 0x0000003400000000, 0x0000000001000000, WriteCombining },
-    // { 0x0000003401000000, 0x00000041ff000000, WriteBack },
-    // { 0x0000007600000000, 0x0000000100000000, WriteThrough },
-    // { 0x0000007700000000, 0x0000006900000000, WriteBack },
-    // { 0x000000e000000000, 0x0000000400000000, WriteCombining },
-    // { 0x000000e400000000, 0x0000001200000000, WriteBack },
-    // { 0x000000f600000000, 0x0000000000020000, WriteCombining },
-    // { 0x000000f600020000, 0x00000049fffe0000, WriteBack },
-    // { 0x0000014000000000, 0x0000000400000000, Uncacheable },
-    // { 0x0000014400000000, 0x0000001200000000, WriteBack },
-    // { 0x0000015600000000, 0x0000000000800000, WriteProtected },
-    // { 0x0000015600800000, 0x00000001ff800000, WriteBack },
-    // { 0x0000015800000000, 0x0000000800000000, Uncacheable },
-    // { 0x0000016000000000, 0x0000001848000000, WriteBack },
-    // { 0x0000017848000000, 0x0000000000800000, WriteCombining },
-    // { 0x0000017848800000, 0x00000007b7800000, WriteBack },
-    // { 0x0000018000000000, 0x0000004000000000, WriteProtected },
-    // { 0x000001c000000000, 0x0000001cdfa58000, WriteBack },
-    // { 0x000001dcdfa58000, 0x0000000000001000, Uncacheable },
-    // { 0x000001dcdfa59000, 0x00000023205a7000, WriteBack },
-
     let all_endpoints_count = raw_memory_range_count << 1;
     let mut all_endpoints_inclusive: Vec<u64> = Vec::with_capacity(all_endpoints_count);
     all_endpoints_inclusive.resize(all_endpoints_count, 0);
@@ -592,13 +403,7 @@ pub fn get_effective_memory_ranges(
     let mut output_ranges: Vec<MtrrMemoryRange> = Vec::with_capacity(all_range_pieces_count_max);
     output_ranges.resize(all_range_pieces_count_max, MtrrMemoryRange::default());
 
-    println!("all_endpoints_count: {all_endpoints_count} ");
     collect_endpoints(&mut all_endpoints_inclusive, raw_memory_ranges, raw_memory_range_count);
-    println!("all_endpoints_inclusive.len(): {} ", all_endpoints_inclusive.len());
-
-    for i in 0..all_endpoints_inclusive.len() {
-        println!("#### AllEndpointsInclusive[{}] = {:x} \n", i, all_endpoints_inclusive[i]);
-    }
 
     let mut output_ranges_count = 0;
     for index in 0..all_endpoints_inclusive.len() - 1 {
@@ -607,10 +412,6 @@ pub fn get_effective_memory_ranges(
         let overlap_bit_flag2 =
             get_overlap_bit_flag(raw_memory_ranges, raw_memory_range_count as u32, all_endpoints_inclusive[index + 1]);
         let overlap_flag_relation = check_overlap_bit_flags_relation(overlap_bit_flag1, overlap_bit_flag2);
-
-        println!(
-            "#### Index = {index} OverlapBitFlag1 = {overlap_bit_flag1:x}, OverlapBitFlag2 = {overlap_bit_flag2:x}, OverlapFlagRelation = {overlap_flag_relation:x} \n",
-        );
 
         match overlap_flag_relation {
             0 => {
@@ -667,26 +468,12 @@ pub fn get_effective_memory_ranges(
         }
     }
 
-    // Up until this point we only created the required output ranges. But
-    // haven't determined their memory types. Now we need to determine the
-    // memory cache type for each range piece. We loop over each output range
-    // and try to check if overlaps with any of the raw memory ranges. If it
-    // does, we set the memory type of the output range to the memory type of
-    // the raw memory range it overlaps with. If it doesn't overlap with any
-    // raw memory range, we set the memory type of the output range to the
-    // default memory type passed to this function.
     for index in 0..output_ranges_count {
         determine_output_memory_cache_type(
             default_type,
             &mut output_ranges[index],
             raw_memory_ranges,
             raw_memory_range_count as u32,
-        );
-    }
-    for i in 0..output_ranges_count {
-        println!(
-            "#### AllRangePieces[{}] = {:x}, {:x}, {:?} \n",
-            i, output_ranges[i].base_address, output_ranges[i].length, output_ranges[i].mem_type
         );
     }
 
@@ -697,14 +484,6 @@ pub fn get_effective_memory_ranges(
         &mut output_ranges_count,
     );
 
-    println!("output_ranges_count: {output_ranges_count} ");
-    for i in 0..output_ranges_count {
-        println!(
-            "#### AllRangePieces[{}] = {:x}, {:x}, {:?} \n",
-            i, output_ranges[i].base_address, output_ranges[i].length, output_ranges[i].mem_type
-        );
-    }
-    println!("memory_range_count: {} ", *memory_range_count);
     assert!(*memory_range_count >= output_ranges_count);
     for i in 0..output_ranges_count {
         memory_ranges[i] = output_ranges[i];
@@ -713,31 +492,55 @@ pub fn get_effective_memory_ranges(
 }
 
 // Unit tests
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[test]
-fn unit_test_get_effective_memory_ranges() {
-    let default_type = MtrrMemoryCacheType::Uncacheable;
-    let physical_address_bits = 38;
-    let raw_memory_ranges = [
-        MtrrMemoryRange::new(0x3A0000000, 0x100000, MtrrMemoryCacheType::Uncacheable),
-        MtrrMemoryRange::new(0x1C60000000, 0x1000000, MtrrMemoryCacheType::WriteThrough),
-        MtrrMemoryRange::new(0x26A0000000, 0x100000, MtrrMemoryCacheType::WriteBack),
-    ];
-    let raw_memory_range_count = raw_memory_ranges.len();
+    #[test]
+    fn unit_test_get_effective_memory_ranges() {
+        let default_type = MtrrMemoryCacheType::Uncacheable;
+        let physical_address_bits = 38;
+        let raw_memory_ranges = [
+            MtrrMemoryRange::new(0x3A0000000, 0x100000, MtrrMemoryCacheType::Uncacheable),
+            MtrrMemoryRange::new(0x1C60000000, 0x1000000, MtrrMemoryCacheType::WriteThrough),
+            MtrrMemoryRange::new(0x26A0000000, 0x100000, MtrrMemoryCacheType::WriteBack),
+        ];
+        let raw_memory_range_count = raw_memory_ranges.len();
 
-    let mut expected_memory_ranges = [MtrrMemoryRange::default();
-        MTRR_NUMBER_OF_FIXED_MTRR * std::mem::size_of::<u64>() + 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 1];
-    let mut expected_memory_ranges_count: usize = expected_memory_ranges.len();
-    get_effective_memory_ranges(
-        default_type,
-        physical_address_bits,
-        &raw_memory_ranges[..],
-        raw_memory_range_count,
-        &mut expected_memory_ranges,
-        &mut expected_memory_ranges_count,
-    );
+        let mut expected_memory_ranges = [MtrrMemoryRange::default();
+            MTRR_NUMBER_OF_FIXED_MTRR * std::mem::size_of::<u64>() + 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 1];
+        let mut expected_memory_ranges_count: usize = expected_memory_ranges.len();
+        get_effective_memory_ranges(
+            default_type,
+            physical_address_bits,
+            &raw_memory_ranges[..],
+            raw_memory_range_count,
+            &mut expected_memory_ranges,
+            &mut expected_memory_ranges_count,
+        );
+    }
 
-    for range in &expected_memory_ranges {
-        println!("{:x} {:x} {:?}", range.base_address, range.length, range.mem_type)
+    #[test]
+    fn test_deterministic_generator() {
+        let mut gen1 = DeterministicGenerator::new(0);
+        let mut gen2 = DeterministicGenerator::new(0);
+
+        // Both generators should produce the same sequence
+        assert_eq!(gen1.next_u32(0, 100), gen2.next_u32(0, 100));
+        assert_eq!(gen1.next_cache_type(), gen2.next_cache_type());
+    }
+
+    #[test]
+    fn test_test_result_collector() {
+        let collector = TestResultCollector::new(MtrrMemoryCacheType::WriteBack, 36, 8);
+
+        let mtrrs = MtrrSettings::default();
+        let mut ranges = [MtrrMemoryRange::default(); 100];
+
+        let (range_count, mtrr_count) = collector.collect_results(&mtrrs, &mut ranges);
+
+        // Should have at least one range for the default type
+        assert!(range_count > 0);
+        assert_eq!(mtrr_count, 0); // There should not be valid MTRRs in the default settings
     }
 }
