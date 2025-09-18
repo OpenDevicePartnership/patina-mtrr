@@ -23,12 +23,29 @@ pub(crate) struct TestResultCollector {
 }
 
 impl TestResultCollector {
-    /// Create a new test result collector.
+    /// Creates a new test result collector with the specified configuration.
     pub(crate) fn new(default_type: MtrrMemoryCacheType, physical_address_bits: u32, variable_mtrr_count: u32) -> Self {
         Self { default_type, physical_address_bits, variable_mtrr_count }
     }
 
-    /// Collect test results, returning the number of effective memory ranges and valid MTRRs.
+    /// Collects test results from MTRR settings.
+    ///
+    /// Analyzes the provided MTRR settings to determine effective memory ranges and
+    /// counts the number of valid variable MTRRs. This method extracts valid MTRR
+    /// configurations and generates the corresponding memory ranges.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use patina_mtrr::structs::{MtrrSettings, MtrrMemoryRange, MtrrMemoryCacheType};
+    /// use patina_mtrr::tests::support::TestResultCollector;
+    ///
+    /// let collector = TestResultCollector::new(MtrrMemoryCacheType::WriteBack, 36, 8);
+    /// let mtrrs = MtrrSettings::default();
+    /// let mut ranges = [MtrrMemoryRange::default(); 100];
+    ///
+    /// let (range_count, mtrr_count) = collector.collect_results(&mtrrs, &mut ranges);
+    /// ```
     pub(crate) fn collect_results(&self, mtrrs: &MtrrSettings, ranges: &mut [MtrrMemoryRange]) -> (usize, u32) {
         let mut raw_memory_ranges = [MtrrMemoryRange::default(); MTRR_NUMBER_OF_VARIABLE_MTRR];
         let mtrr_valid_bits_mask = (1u64 << self.physical_address_bits) - 1;
@@ -70,22 +87,60 @@ pub(crate) struct DeterministicGenerator {
 }
 
 impl DeterministicGenerator {
-    /// Creates a new deterministic generator starting at the given index.
+    /// Creates a new deterministic test value generator.
     pub(crate) fn new(start_index: usize) -> Self {
         Self { sequence: TestSequence::new(start_index) }
     }
 
-    /// Generates a 32-bit test value.
+    /// Generates the next 32-bit test value within the specified range.
+    ///
+    /// Produces a deterministic 32-bit value between the start (inclusive) and limit (exclusive)
+    /// values. The sequence is reproducible when starting from the same generator state.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use patina_mtrr::tests::support::DeterministicGenerator;
+    ///
+    /// let mut generator = DeterministicGenerator::new(0);
+    /// let value = generator.next_u32(10, 50);
+    /// assert!(value >= 10 && value < 50);
+    /// ```
     pub(crate) fn next_u32(&mut self, start: u32, limit: u32) -> u32 {
         self.sequence.next_u32(start, limit)
     }
 
-    /// Generates a 64-bit test value.
+    /// Generates the next 64-bit test value within the specified range.
+    ///
+    /// Produces a deterministic 64-bit value between the start (inclusive) and limit (exclusive)
+    /// values. The sequence is reproducible when starting from the same generator state.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use patina_mtrr::tests::support::DeterministicGenerator;
+    ///
+    /// let mut generator = DeterministicGenerator::new(0);
+    /// let value = generator.next_u64(1000, 5000);
+    /// assert!(value >= 1000 && value < 5000);
+    /// ```
     pub(crate) fn next_u64(&mut self, start: u64, limit: u64) -> u64 {
         self.sequence.next_u64(start, limit)
     }
 
-    /// Generates a cache type.
+    /// Generates the next memory cache type in a sequence.
+    ///
+    /// Produces a deterministic memory cache type from the available MTRR cache types.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use patina_mtrr::tests::support::DeterministicGenerator;
+    /// use patina_mtrr::structs::MtrrMemoryCacheType;
+    ///
+    /// let mut generator = DeterministicGenerator::new(0);
+    /// let cache_type = generator.next_cache_type();
+    /// ```
     pub(crate) fn next_cache_type(&mut self) -> MtrrMemoryCacheType {
         self.sequence.next_cache_type()
     }
@@ -102,7 +157,22 @@ impl MtrrPairGenerator {
         Self { range_generator: RangeGenerator::new(TestSequence::new(start_index)) }
     }
 
-    /// Generates an MTRR pair for the given parameters.
+    /// Generates a single MTRR variable setting and corresponding memory range.
+    ///
+    /// Creates an MTRR pair for the specified system configuration and cache type.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use patina_mtrr::tests::support::MtrrPairGenerator;
+    /// use patina_mtrr::structs::MtrrMemoryCacheType;
+    ///
+    /// let mut generator = MtrrPairGenerator::new(0);
+    /// let (mtrr_setting, memory_range) = generator.generate_pair(
+    ///     36,
+    ///     MtrrMemoryCacheType::WriteBack
+    /// );
+    /// ```
     pub(crate) fn generate_pair(
         &mut self,
         physical_address_bits: u32,
@@ -112,7 +182,22 @@ impl MtrrPairGenerator {
         (Some(mtrr_pair), Some(memory_range))
     }
 
-    /// Generates multiple valid and configurable MTRR pairs.
+    /// Generates multiple non-overlapping MTRR pairs with specified type distribution.
+    ///
+    /// Creates a collection of valid, non-overlapping memory ranges with the specified
+    /// distribution of memory cache types. This is useful for testing complex MTRR
+    /// configurations with multiple variable MTRRs.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use patina_mtrr::tests::support::MtrrPairGenerator;
+    /// use patina_mtrr::tests::fixtures::MemoryTypeCounts;
+    ///
+    /// let mut generator = MtrrPairGenerator::new(0);
+    /// let type_counts = MemoryTypeCounts::new(1, 2, 3, 1, 1);
+    /// let ranges = generator.generate_multiple_pairs(36, type_counts);
+    /// ```
     pub(crate) fn generate_multiple_pairs(
         &mut self,
         physical_address_bits: u32,

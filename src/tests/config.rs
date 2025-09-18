@@ -34,7 +34,27 @@ pub(crate) struct MtrrLibSystemParameter {
 }
 
 impl MtrrLibSystemParameter {
-    /// Creates a new system parameter configuration.
+    /// Creates a new system parameter configuration with the specified values.
+    ///
+    /// Initializes an MTRR system parameter configuration that defines the hardware
+    /// capabilities and default settings for testing. This configuration is used to
+    /// simulate different hardware environments and MTRR support levels.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use patina_mtrr::tests::config::MtrrLibSystemParameter;
+    /// use patina_mtrr::structs::MtrrMemoryCacheType;
+    ///
+    /// let params = MtrrLibSystemParameter::new(
+    ///     40,                                    // 40-bit physical addressing
+    ///     true,                                  // MTRR support enabled
+    ///     true,                                  // Fixed MTRR support enabled
+    ///     MtrrMemoryCacheType::WriteBack,        // Default cache type
+    ///     8,                                     // 8 variable MTRRs
+    ///     0                                      // No TME key ID bits
+    /// );
+    /// ```
     pub(crate) const fn new(
         physical_address_bits: u8,
         mtrr_supported: bool,
@@ -67,63 +87,172 @@ pub(crate) struct SystemParameterBuilder {
 }
 
 impl SystemParameterBuilder {
-    /// Creates a new builder with default parameters.
+    /// Creates a new system parameter builder with default configuration.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use patina_mtrr::tests::config::SystemParameterBuilder;
+    ///
+    /// let builder = SystemParameterBuilder::new();
+    /// let params = builder.with_variable_mtrr_count(16).build();
+    /// ```
     pub(crate) fn new() -> Self {
         Self { config: DEFAULT_SYSTEM_PARAMETER }
     }
 
-    /// Creates a new builder from an existing configuration.
+    /// Creates a new builder initialized with an existing configuration.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use patina_mtrr::tests::config::{SystemParameterBuilder, DEFAULT_SYSTEM_PARAMETER};
+    ///
+    /// let builder = SystemParameterBuilder::from(DEFAULT_SYSTEM_PARAMETER);
+    /// let params = builder.with_physical_address_bits(48).build();
+    /// ```
     pub(crate) fn from(config: MtrrLibSystemParameter) -> Self {
         Self { config }
     }
 
-    /// Sets the physical address bits.
+    /// Sets the number of physical address bits supported by the system.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use patina_mtrr::tests::config::SystemParameterBuilder;
+    ///
+    /// let params = SystemParameterBuilder::new()
+    ///     .with_physical_address_bits(48)
+    ///     .build();
+    /// ```
     pub(crate) fn with_physical_address_bits(mut self, bits: u8) -> Self {
         self.config.physical_address_bits = bits;
         self
     }
 
-    /// Sets MTRR support.
+    /// Sets whether MTRR functionality is supported by the system.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use patina_mtrr::tests::config::SystemParameterBuilder;
+    ///
+    /// let params = SystemParameterBuilder::new()
+    ///     .with_mtrr_support(false)
+    ///     .build();
+    /// ```
     pub(crate) fn with_mtrr_support(mut self, supported: bool) -> Self {
         self.config.mtrr_supported = supported;
         self
     }
 
-    /// Sets fixed MTRR support.
+    /// Sets whether fixed MTRR functionality is supported by the system.
+    ///
+    /// Enables or disables fixed MTRR support independently of variable MTRR support.
+    /// Fixed MTRRs cover specific low memory ranges with predetermined sizes.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use patina_mtrr::tests::config::SystemParameterBuilder;
+    ///
+    /// let params = SystemParameterBuilder::new()
+    ///     .with_fixed_mtrr_support(false)
+    ///     .build();
+    /// ```
     pub(crate) fn with_fixed_mtrr_support(mut self, supported: bool) -> Self {
         self.config.fixed_mtrr_supported = supported;
         self
     }
 
-    /// Sets the default cache type.
+    /// Sets the default memory cache type for uncovered memory regions.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use patina_mtrr::tests::config::SystemParameterBuilder;
+    /// use patina_mtrr::structs::MtrrMemoryCacheType;
+    ///
+    /// let params = SystemParameterBuilder::new()
+    ///     .with_default_cache_type(MtrrMemoryCacheType::WriteBack)
+    ///     .build();
+    /// ```
     pub(crate) fn with_default_cache_type(mut self, cache_type: MtrrMemoryCacheType) -> Self {
         self.config.default_cache_type = cache_type;
         self
     }
 
-    /// Sets the variable MTRR count.
+    /// Sets the number of variable MTRRs available in the system.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use patina_mtrr::tests::config::SystemParameterBuilder;
+    ///
+    /// let params = SystemParameterBuilder::new()
+    ///     .with_variable_mtrr_count(16)
+    ///     .build();
+    /// ```
     pub(crate) fn with_variable_mtrr_count(mut self, count: u32) -> Self {
         self.config.variable_mtrr_count = count;
         self
     }
 
-    /// Sets the MK-TME (Multi-Key Total Memory Encryption) ID bits.
+    /// Sets the number of MK-TME (Multi-Key Total Memory Encryption) key ID bits.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use patina_mtrr::tests::config::SystemParameterBuilder;
+    ///
+    /// let params = SystemParameterBuilder::new()
+    ///     .with_mk_tme_keyid_bits(4)
+    ///     .build();
+    /// ```
     pub(crate) fn with_mk_tme_keyid_bits(mut self, bits: u8) -> Self {
         self.config.mk_tme_keyid_bits = bits;
         self
     }
 
-    /// Builds the final configuration.
+    /// Builds and returns the final system parameter configuration.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use patina_mtrr::tests::config::SystemParameterBuilder;
+    ///
+    /// let params = SystemParameterBuilder::new()
+    ///     .with_variable_mtrr_count(8)
+    ///     .with_physical_address_bits(40)
+    ///     .build();
+    /// ```
     pub(crate) fn build(self) -> MtrrLibSystemParameter {
         self.config
     }
 
-    /// Convenience method for creating a no-MTRR configuration.
+    /// Creates a system configuration with MTRR support completely disabled.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use patina_mtrr::tests::config::SystemParameterBuilder;
+    ///
+    /// let params = SystemParameterBuilder::no_mtrr_support().build();
+    /// ```
     pub(crate) fn no_mtrr_support() -> Self {
         Self::new().with_mtrr_support(false).with_fixed_mtrr_support(false)
     }
 
-    /// Convenience method for creating a no-fixed-MTRR configuration.
+    /// Creates a system configuration with only fixed MTRR support disabled.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use patina_mtrr::tests::config::SystemParameterBuilder;
+    ///
+    /// let params = SystemParameterBuilder::no_fixed_mtrr_support().build();
+    /// ```
     pub(crate) fn no_fixed_mtrr_support() -> Self {
         Self::new().with_mtrr_support(true).with_fixed_mtrr_support(false)
     }

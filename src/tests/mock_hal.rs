@@ -45,7 +45,7 @@ pub(crate) struct MockHal {
 }
 
 impl MockHal {
-    /// Creates a new mock HAL with default register values.
+    /// Creates a new mock HAL instance with default register values.
     pub(crate) fn new() -> Self {
         Self {
             fixed_mtrrs_value: [0; MTRR_NUMBER_OF_FIXED_MTRR],
@@ -63,10 +63,27 @@ impl MockHal {
         }
     }
 
-    /// Initializes MTRR registers based on the provided system parameters.
+    /// Initializes MTRR registers to match the specified system configuration.
     ///
-    /// This method configures the mock hardware state to match the specified
-    /// system capabilities and default values.
+    /// Configures the mock hardware state to simulate the provided system parameters.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use patina_mtrr::tests::{mock_hal::MockHal, config::MtrrLibSystemParameter};
+    /// use patina_mtrr::structs::MtrrMemoryCacheType;
+    ///
+    /// let mut mock_hal = MockHal::new();
+    /// let params = MtrrLibSystemParameter {
+    ///     default_cache_type: MtrrMemoryCacheType::WriteBack,
+    ///     physical_address_bits: 36,
+    ///     variable_mtrr_count: 8,
+    ///     fixed_mtrr_supported: true,
+    ///     mtrr_supported: true,
+    ///     mk_tme_keyid_bits: 0,
+    /// };
+    /// mock_hal.initialize_mtrr_regs(&params);
+    /// ```
     pub(crate) fn initialize_mtrr_regs(&mut self, system_parameter: &MtrrLibSystemParameter) {
         for value in &mut self.fixed_mtrrs_value {
             *value = system_parameter.default_cache_type as u64;
@@ -131,23 +148,23 @@ impl Hal for MockHal {
         self.interrupt_state
     }
 
-    /// Write to fake CR3 register.
+    /// Writes a value to the simulated CR3 control register.
     fn asm_write_cr3(&mut self, value: u64) {
         self.cr3 = value;
     }
 
-    /// Read from fake CR3 register.
+    /// Reads the current value from the simulated CR3 control register.
     fn asm_read_cr3(&self) -> u64 {
         self.cr3
     }
 
-    /// Write to fake CR4 register.
+    /// Writes a value to the simulated CR4 control register.
     #[inline(always)]
     fn asm_write_cr4(&mut self, value: u64) {
         self.cr4 = value;
     }
 
-    /// Read from fake CR4 register.
+    /// Reads the current value from the simulated CR4 control register.
     #[inline(always)]
     fn asm_read_cr4(&self) -> u64 {
         self.cr4
@@ -268,7 +285,20 @@ impl Hal for MockHal {
     }
 }
 
-/// A convenience function to create an MTRR library instance with the provided mock HAL.
+/// Creates an MTRR library instance configured with the provided mock HAL.
+///
+/// This convenience function instantiates an MTRR library using the specified mock HAL
+/// and reserves the requested number of variable MTRRs. This is useful for setting up
+/// test environments with pre-configured mock hardware states.
+///
+/// ## Examples
+///
+/// ```
+/// use patina_mtrr::tests::mock_hal::{MockHal, create_mtrr_lib_with_mock_hal};
+///
+/// let mock_hal = MockHal::new();
+/// let mtrr_lib = create_mtrr_lib_with_mock_hal(mock_hal, 2);
+/// ```
 pub(crate) fn create_mtrr_lib_with_mock_hal(hal: MockHal, reserved_variable_mtrrs: u32) -> MtrrLib<MockHal> {
     MtrrLib::new(hal, reserved_variable_mtrrs)
 }

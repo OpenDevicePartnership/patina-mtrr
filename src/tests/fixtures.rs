@@ -29,17 +29,44 @@ pub(crate) struct MemoryTypeCounts {
 }
 
 impl MemoryTypeCounts {
-    /// Creates a new memory type count structure.
+    /// Creates a new memory type count structure with specified type distributions.
     pub(crate) const fn new(uc: u32, wt: u32, wb: u32, wp: u32, wc: u32) -> Self {
         Self { uc, wt, wb, wp, wc }
     }
 
-    /// Returns the total count of all memory types.
+    /// Returns the total count of all memory type ranges.
+    ///
+    /// Calculates and returns the sum of all memory type counts, representing
+    /// the total number of memory ranges across all cache types.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use patina_mtrr::tests::fixtures::MemoryTypeCounts;
+    ///
+    /// let counts = MemoryTypeCounts::new(2, 3, 4, 1, 2);
+    /// assert_eq!(counts.total(), 12);
+    /// ```
     pub(crate) const fn total(&self) -> u32 {
         self.uc + self.wt + self.wb + self.wp + self.wc
     }
 
-    /// Checks if all counts are zero.
+    /// Checks if all memory type counts are zero.
+    ///
+    /// Returns true if no memory ranges are specified for any cache type,
+    /// indicating an empty memory type distribution.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use patina_mtrr::tests::fixtures::MemoryTypeCounts;
+    ///
+    /// let empty_counts = MemoryTypeCounts::new(0, 0, 0, 0, 0);
+    /// assert!(empty_counts.is_empty());
+    ///
+    /// let non_empty_counts = MemoryTypeCounts::new(1, 0, 0, 0, 0);
+    /// assert!(!non_empty_counts.is_empty());
+    /// ```
     pub(crate) const fn is_empty(&self) -> bool {
         self.total() == 0
     }
@@ -52,43 +79,116 @@ pub(crate) struct TestSequence {
 }
 
 impl TestSequence {
-    /// Creates a new test sequence starting at the given index.
+    /// Creates a new deterministic test sequence starting at the specified index.
     pub(crate) const fn new(index: usize) -> Self {
         Self { index }
     }
 
-    /// Creates a test sequence starting at index 0.
+    /// Creates a test sequence starting at index zero.
+    ///
+    /// Convenience method that creates a new test sequence starting from the beginning
+    /// of the sequence pattern.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use patina_mtrr::tests::fixtures::TestSequence;
+    ///
+    /// let sequence = TestSequence::starting();
+    /// assert_eq!(sequence.index(), 0);
+    /// ```
     pub(crate) const fn starting() -> Self {
         Self::new(0)
     }
 
-    /// Gets the next 32-bit test value in the sequence.
+    /// Generates the next 32-bit test value within the specified range.
+    ///
+    /// Produces a deterministic 32-bit value between start (inclusive) and limit (exclusive)
+    /// from the current sequence position. The sequence automatically advances to the next
+    /// position after generating the value.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use patina_mtrr::tests::fixtures::TestSequence;
+    ///
+    /// let mut sequence = TestSequence::starting();
+    /// let value = sequence.next_u32(10, 50);
+    /// assert!(value >= 10 && value < 50);
+    /// ```
     pub(crate) fn next_u32(&mut self, start: u32, limit: u32) -> u32 {
         let value = TEST_VALUES_32[self.index % TEST_VALUES_32.len()];
         self.index = self.index.wrapping_add(1);
         start + (value % (limit - start))
     }
 
-    /// Gets the next 64-bit test value in the sequence.
+    /// Generates the next 64-bit test value within the specified range.
+    ///
+    /// Produces a deterministic 64-bit value between start (inclusive) and limit (exclusive)
+    /// from the current sequence position. The sequence automatically advances to the next
+    /// position after generating the value.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use patina_mtrr::tests::fixtures::TestSequence;
+    ///
+    /// let mut sequence = TestSequence::starting();
+    /// let value = sequence.next_u64(1000, 5000);
+    /// assert!(value >= 1000 && value < 5000);
+    /// ```
     pub(crate) fn next_u64(&mut self, start: u64, limit: u64) -> u64 {
         let value = TEST_VALUES_64[self.index % TEST_VALUES_64.len()];
         self.index = self.index.wrapping_add(1);
         start + (value % (limit - start))
     }
 
-    /// Gets the next cache type in the sequence.
+    /// Generates the next memory cache type in the sequence.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use patina_mtrr::tests::fixtures::TestSequence;
+    /// use patina_mtrr::structs::MtrrMemoryCacheType;
+    ///
+    /// let mut sequence = TestSequence::starting();
+    /// let cache_type = sequence.next_cache_type();
+    /// ```
     pub(crate) fn next_cache_type(&mut self) -> MtrrMemoryCacheType {
         let cache_type = CACHE_TYPE_PATTERNS[self.index % CACHE_TYPE_PATTERNS.len()];
         self.index = self.index.wrapping_add(1);
         cache_type
     }
 
-    /// Advances the sequence by the given number of steps.
+    /// Advances the sequence position by the specified number of steps.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use patina_mtrr::tests::fixtures::TestSequence;
+    ///
+    /// let mut sequence = TestSequence::starting();
+    /// assert_eq!(sequence.index(), 0);
+    /// sequence.advance(5);
+    /// assert_eq!(sequence.index(), 5);
+    /// ```
     pub(crate) fn advance(&mut self, steps: usize) {
         self.index = self.index.wrapping_add(steps);
     }
 
-    /// Gets the current index in the sequence.
+    /// Returns the current position in the sequence.
+    ///
+    /// Gets the current index position in the deterministic sequence, which can be
+    /// used to track progress or reproduce specific sequence states.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use patina_mtrr::tests::fixtures::TestSequence;
+    ///
+    /// let sequence = TestSequence::new(42);
+    /// assert_eq!(sequence.index(), 42);
+    /// ```
     pub(crate) const fn index(&self) -> usize {
         self.index
     }
@@ -103,30 +203,78 @@ pub(crate) struct MtrrTestFixture {
 }
 
 impl MtrrTestFixture {
-    /// Creates a new test fixture with default parameters.
+    /// Creates a new test fixture with default configuration.
     pub(crate) fn new() -> Self {
         Self { system_parameter: DEFAULT_SYSTEM_PARAMETER, reserved_variable_mtrrs: 0, mock_hal: None }
     }
 
-    /// Sets the system parameter configuration.
+    /// Sets the system parameter configuration for the test fixture.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use patina_mtrr::tests::{fixtures::MtrrTestFixture, config::MtrrLibSystemParameter};
+    /// use patina_mtrr::structs::MtrrMemoryCacheType;
+    ///
+    /// let params = MtrrLibSystemParameter {
+    ///     default_cache_type: MtrrMemoryCacheType::WriteBack,
+    ///     physical_address_bits: 40,
+    ///     variable_mtrr_count: 10,
+    ///     fixed_mtrr_supported: true,
+    ///     mtrr_supported: true,
+    ///     mk_tme_keyid_bits: 0,
+    /// };
+    /// let fixture = MtrrTestFixture::new().with_system_parameter(params);
+    /// ```
     pub(crate) fn with_system_parameter(mut self, parameter: MtrrLibSystemParameter) -> Self {
         self.system_parameter = parameter;
         self
     }
 
-    /// Sets the number of reserved variable MTRRs.
+    /// Sets the number of variable MTRRs to reserve for system use.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use patina_mtrr::tests::fixtures::MtrrTestFixture;
+    ///
+    /// let fixture = MtrrTestFixture::new().with_reserved_variable_mtrrs(2);
+    /// ```
     pub(crate) fn with_reserved_variable_mtrrs(mut self, count: u32) -> Self {
         self.reserved_variable_mtrrs = count;
         self
     }
 
-    /// Sets a pre-configured MockHal instance.
+    /// Sets a pre-configured MockHal instance for the test fixture.
+    ///
+    /// Allows using a custom-configured MockHal instance instead of creating
+    /// a new one based on system parameters. This is useful when specific
+    /// register states or behaviors are needed for testing.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use patina_mtrr::tests::{fixtures::MtrrTestFixture, mock_hal::MockHal};
+    ///
+    /// let mut custom_hal = MockHal::new();
+    /// // Configure custom_hal as needed...
+    /// let fixture = MtrrTestFixture::new().with_mock_hal(custom_hal);
+    /// ```
     pub(crate) fn with_mock_hal(mut self, hal: MockHal) -> Self {
         self.mock_hal = Some(hal);
         self
     }
 
-    /// Creates a mock HAL configured with the currently set system parameters.
+    /// Creates a mock HAL instance configured with the current system parameters.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use patina_mtrr::tests::fixtures::MtrrTestFixture;
+    ///
+    /// let fixture = MtrrTestFixture::new();
+    /// let mock_hal = fixture.create_mock_hal();
+    /// ```
     pub(crate) fn create_mock_hal(&self) -> MockHal {
         if let Some(hal) = &self.mock_hal {
             hal.clone()
@@ -137,28 +285,75 @@ impl MtrrTestFixture {
         }
     }
 
-    /// Creates an MTRR library instance for testing.
+    /// Creates an MTRR library instance configured for testing.
+    ///
+    /// Instantiates an MTRR library using the configured mock HAL and system parameters.
+    /// This provides a complete MTRR library setup ready for testing various MTRR
+    /// operations and scenarios.
     pub(crate) fn create_mtrr_lib(&self) -> MtrrLib<MockHal> {
         let hal = self.create_mock_hal();
         MtrrLib::new(hal, self.reserved_variable_mtrrs)
     }
 
-    /// Gets a reference to the system parameter.
+    /// Gets a reference to the current system parameter configuration.
+    ///
+    /// Returns a reference to the system parameters that will be used to configure
+    /// the mock hardware environment. This is useful for inspecting the current
+    /// configuration or using it to set up related test components.
     pub(crate) fn system_parameter(&self) -> &MtrrLibSystemParameter {
         &self.system_parameter
     }
 
-    /// Convenience constructor for no-MTRR scenarios.
+    /// Creates a test fixture with MTRR support completely disabled.
+    ///
+    /// Convenience constructor that sets up a test environment where MTRR support
+    /// is not available. This is useful for testing code paths that handle systems
+    /// without MTRR capabilities.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use patina_mtrr::tests::fixtures::MtrrTestFixture;
+    ///
+    /// let fixture = MtrrTestFixture::no_mtrr_support();
+    /// let mtrr_lib = fixture.create_mtrr_lib();
+    /// ```
     pub(crate) fn no_mtrr_support() -> Self {
         Self::new().with_system_parameter(SystemParameterBuilder::no_mtrr_support().build())
     }
 
-    /// Convenience constructor for no-fixed-MTRR scenarios.
+    /// Creates a test fixture with fixed MTRR support disabled.
+    ///
+    /// Convenience constructor that sets up a test environment where variable MTRRs
+    /// are supported but fixed MTRRs are not available. This simulates certain
+    /// hardware configurations or virtualized environments.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use patina_mtrr::tests::fixtures::MtrrTestFixture;
+    ///
+    /// let fixture = MtrrTestFixture::no_fixed_mtrr_support();
+    /// let mtrr_lib = fixture.create_mtrr_lib();
+    /// ```
     pub(crate) fn no_fixed_mtrr_support() -> Self {
         Self::new().with_system_parameter(SystemParameterBuilder::no_fixed_mtrr_support().build())
     }
 
-    /// Builder method for configuring system parameters given a closure.
+    /// Configures the fixture using a custom configuration function.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use patina_mtrr::tests::fixtures::MtrrTestFixture;
+    /// use patina_mtrr::structs::MtrrMemoryCacheType;
+    ///
+    /// let fixture = MtrrTestFixture::new().with_config(|builder| {
+    ///     builder
+    ///         .with_physical_address_bits(48)
+    ///         .with_default_cache_type(MtrrMemoryCacheType::WriteBack)
+    /// });
+    /// ```
     pub(crate) fn with_config<F>(mut self, config_fn: F) -> Self
     where
         F: FnOnce(SystemParameterBuilder) -> SystemParameterBuilder,
@@ -168,37 +363,99 @@ impl MtrrTestFixture {
         self
     }
 
-    /// Convenience method for getting an MtrrLib instance.
+    /// Creates an MTRR library instance using the configured parameters.
+    ///
+    /// Convenience method that creates and returns an MTRR library instance.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use patina_mtrr::tests::fixtures::MtrrTestFixture;
+    ///
+    /// let fixture = MtrrTestFixture::new();
+    /// let mtrr_lib = fixture.mtrr_lib();
+    /// ```
     pub(crate) fn mtrr_lib(&self) -> MtrrLib<MockHal> {
         self.create_mtrr_lib()
     }
 
-    /// Creates a fixture with fixed MTRR patterns pre-configured.
+    /// Creates a test fixture with pre-configured deterministic fixed MTRR patterns.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use patina_mtrr::tests::fixtures::MtrrTestFixture;
+    ///
+    /// let fixture = MtrrTestFixture::with_deterministic_fixed_mtrrs();
+    /// let mtrr_lib = fixture.create_mtrr_lib();
+    /// ```
     pub(crate) fn with_deterministic_fixed_mtrrs() -> Self {
         let (hal, _) = create_fixed_mtrr_test_setup();
         Self::new().with_mock_hal(hal)
     }
 
-    /// Gets the expected fixed MTRR settings for pattern validation.
+    /// Returns the expected fixed MTRR settings for pattern validation.
+    ///
+    /// Useful for validating MTRR operations produce expected results.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use patina_mtrr::tests::fixtures::MtrrTestFixture;
+    ///
+    /// let fixture = MtrrTestFixture::with_deterministic_fixed_mtrrs();
+    /// let expected_settings = fixture.get_expected_fixed_mtrr_settings();
+    /// ```
     pub(crate) fn get_expected_fixed_mtrr_settings(&self) -> crate::structs::MtrrFixedSettings {
         let (_, expected_settings) = create_fixed_mtrr_test_setup();
         expected_settings
     }
 
-    /// Creates a fixture with comprehensive MTRR settings pre-configured.
-    /// This includes variable MTRRs, fixed MTRRs, and default type register setup.
+    /// Creates a test fixture with comprehensive MTRR configuration pre-loaded.
+    ///
+    /// Sets up a test environment with both variable and fixed MTRRs configured,
+    /// along with default type register setup.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use patina_mtrr::tests::fixtures::MtrrTestFixture;
+    ///
+    /// let fixture = MtrrTestFixture::with_comprehensive_mtrr_setup();
+    /// let mtrr_lib = fixture.create_mtrr_lib();
+    /// ```
     pub(crate) fn with_comprehensive_mtrr_setup() -> Self {
         let (hal, _) = create_comprehensive_mtrr_test_setup();
         Self::new().with_mock_hal(hal)
     }
 
-    /// Gets the expected comprehensive MTRR settings for validation.
+    /// Returns the expected comprehensive MTRR settings for validation.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use patina_mtrr::tests::fixtures::MtrrTestFixture;
+    ///
+    /// let fixture = MtrrTestFixture::with_comprehensive_mtrr_setup();
+    /// let expected_settings = fixture.get_expected_comprehensive_mtrr_settings();
+    /// ```
     pub(crate) fn get_expected_comprehensive_mtrr_settings(&self) -> crate::structs::MtrrSettings {
         let (_, expected_settings) = create_comprehensive_mtrr_test_setup();
         expected_settings
     }
 
     /// Creates a system parameter from the current fixture configuration.
+    ///
+    /// This is useful if a new instance of the system parameter is needed.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use patina_mtrr::tests::fixtures::MtrrTestFixture;
+    ///
+    /// let fixture = MtrrTestFixture::new();
+    /// let params = fixture.create_system_parameter();
+    /// ```
     pub(crate) fn create_system_parameter(&self) -> MtrrLibSystemParameter {
         self.system_parameter.clone()
     }
@@ -210,7 +467,15 @@ impl Default for MtrrTestFixture {
     }
 }
 
-/// Creates a test setup with variable MTRRs pre-configured.
+/// Creates a test setup with deterministic variable MTRR configuration.
+///
+/// ## Example
+///
+/// ```
+/// use patina_mtrr::tests::fixtures::create_variable_mtrr_test_setup;
+///
+/// let (mock_hal, expected_settings) = create_variable_mtrr_test_setup();
+/// ```
 pub(crate) fn create_variable_mtrr_test_setup() -> (MockHal, crate::structs::MtrrSettings) {
     use crate::hal::Hal;
     use crate::structs::{MSR_IA32_MTRR_PHYSBASE0, MSR_IA32_MTRR_PHYSMASK0, MtrrSettings};
@@ -239,7 +504,15 @@ pub(crate) fn create_variable_mtrr_test_setup() -> (MockHal, crate::structs::Mtr
     (hal, expected_mtrr_settings)
 }
 
-/// Creates a test setup with fixed MTRRs pre-configured.
+/// Creates a test setup with deterministic fixed MTRR configuration.
+///
+/// ## Example
+///
+/// ```
+/// use patina_mtrr::tests::fixtures::create_fixed_mtrr_test_setup;
+///
+/// let (mock_hal, expected_fixed_settings) = create_fixed_mtrr_test_setup();
+/// ```
 pub(crate) fn create_fixed_mtrr_test_setup() -> (MockHal, crate::structs::MtrrFixedSettings) {
     use crate::hal::Hal;
     use crate::structs::{MTRR_NUMBER_OF_FIXED_MTRR, MtrrFixedSettings};
@@ -268,7 +541,15 @@ pub(crate) fn create_fixed_mtrr_test_setup() -> (MockHal, crate::structs::MtrrFi
     (hal, expected_fixed_settings)
 }
 
-/// Creates a comprehensive test setup with all MTRR types configured.
+/// Creates a comprehensive test setup with complete MTRR configuration.
+///
+/// ## Example
+///
+/// ```
+/// use patina_mtrr::tests::fixtures::create_comprehensive_mtrr_test_setup;
+///
+/// let (mock_hal, expected_settings) = create_comprehensive_mtrr_test_setup();
+/// ```
 pub(crate) fn create_comprehensive_mtrr_test_setup() -> (MockHal, crate::structs::MtrrSettings) {
     use crate::hal::Hal;
     use crate::structs::{
@@ -330,7 +611,24 @@ impl RangeGenerator {
         Self { sequence }
     }
 
-    /// Generates an MTRR pair for the specified cache type with non-overlapping ranges.
+    /// Generates an MTRR variable setting and memory range for the specified cache type.
+    ///
+    /// Creates a MTRR configuration pair consisting of a variable MTRR setting (base/mask registers)
+    /// and the corresponding memory range description. The generated ranges are designed to be
+    /// non-overlapping and fit within the physical address space.
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use patina_mtrr::tests::fixtures::{RangeGenerator, TestSequence};
+    /// use patina_mtrr::structs::MtrrMemoryCacheType;
+    ///
+    /// let mut generator = RangeGenerator::new(TestSequence::starting());
+    /// let (mtrr_setting, memory_range) = generator.generate_mtrr_pair(
+    ///     36,
+    ///     MtrrMemoryCacheType::WriteBack
+    /// );
+    /// ```
     pub(crate) fn generate_mtrr_pair(
         &mut self,
         physical_address_bits: u32,
@@ -364,7 +662,18 @@ impl RangeGenerator {
         (mtrr_pair, memory_range)
     }
 
-    /// Gets range parameters based on cache type.
+    /// Gets deterministic range parameters based on cache type.
+    ///
+    /// Generates memory ranges with predictable patterns for different cache types.
+    ///
+    /// ## Example
+    ///
+    /// ```rust
+    /// let mut generator = RangeGenerator::new(TestSequence::starting());
+    /// let (base, size) = generator.get_range_for_cache_type(MtrrMemoryCacheType::WriteBack);
+    /// assert!(base >= 0x40000000); // WB ranges start at 1GB+
+    /// assert_eq!(size, 0x4000000);  // WB ranges are 64MB
+    /// ```
     fn get_range_for_cache_type(&mut self, cache_type: MtrrMemoryCacheType) -> (u64, u64) {
         // Create deterministic but varied ranges
         let seq_offset = (self.sequence.index() % 4) as u64;
@@ -409,7 +718,29 @@ impl RangeGenerator {
         }
     }
 
-    /// Generates multiple MTRR ranges ensuring no overlaps.
+    /// Generates multiple MTRR ranges ensuring no overlaps between them.
+    ///
+    /// Creates a collection of memory ranges according to the specified type counts.
+    /// Basic types (UC, WT, WB) are generated first without overlap checking,
+    /// then WP and WC ranges are generated with overlap validation.
+    ///
+    /// ## Example
+    ///
+    /// ```rust
+    /// let mut generator = RangeGenerator::new(TestSequence::starting());
+    /// let counts = MemoryTypeCounts::new(2, 1, 1, 1, 1); // 2 UC, 1 WT, 1 WB, 1 WP, 1 WC
+    /// let ranges = generator.generate_non_overlapping_ranges(48, counts);
+    /// assert_eq!(ranges.len(), 6); // Total count matches
+    ///
+    /// // Verify no overlaps
+    /// for (i, range1) in ranges.iter().enumerate() {
+    ///     for range2 in ranges.iter().skip(i + 1) {
+    ///         let range1_end = range1.base_address + range1.length;
+    ///         let range2_end = range2.base_address + range2.length;
+    ///         assert!(range1_end <= range2.base_address || range1.base_address >= range2_end);
+    ///     }
+    /// }
+    /// ```
     pub(crate) fn generate_non_overlapping_ranges(
         &mut self,
         physical_address_bits: u32,
@@ -452,6 +783,34 @@ impl RangeGenerator {
     }
 
     /// Generates ranges of a specific type with no overlaps with existing ranges.
+    ///
+    /// ## Example
+    ///
+    /// ```rust
+    /// let mut generator = RangeGenerator::new(TestSequence::starting());
+    /// let mut existing_ranges = vec![
+    ///     MtrrMemoryRange {
+    ///         base_address: 0x1000000,
+    ///         length: 0x100000,
+    ///         mem_type: MtrrMemoryCacheType::Uncacheable,
+    ///     }
+    /// ];
+    ///
+    /// generator.generate_non_overlapping_type_ranges(
+    ///     48,
+    ///     &mut existing_ranges,
+    ///     MtrrMemoryCacheType::WriteThrough,
+    ///     2
+    /// );
+    ///
+    /// assert_eq!(existing_ranges.len(), 3); // Original + 2 new ranges
+    ///
+    /// // Verify new ranges don't overlap with existing
+    /// let wt_ranges: Vec<_> = existing_ranges.iter()
+    ///     .filter(|r| r.mem_type == MtrrMemoryCacheType::WriteThrough)
+    ///     .collect();
+    /// assert_eq!(wt_ranges.len(), 2);
+    /// ```
     fn generate_non_overlapping_type_ranges(
         &mut self,
         physical_address_bits: u32,
@@ -485,6 +844,44 @@ impl RangeGenerator {
     }
 
     /// Checks if a range overlaps with any range in the collection.
+    ///
+    /// Determines whether a given memory range overlaps with any of the existing
+    /// ranges in the provided collection. Two ranges overlap if they share any
+    /// common memory addresses.
+    ///
+    /// ## Example
+    ///
+    /// ```rust
+    /// let test_range = MtrrMemoryRange {
+    ///     base_address: 0x2000000,
+    ///     length: 0x100000,
+    ///     mem_type: MtrrMemoryCacheType::WriteBack,
+    /// };
+    ///
+    /// let existing_ranges = vec![
+    ///     MtrrMemoryRange {
+    ///         base_address: 0x1000000,
+    ///         length: 0x100000,
+    ///         mem_type: MtrrMemoryCacheType::Uncacheable,
+    ///     },
+    ///     MtrrMemoryRange {
+    ///         base_address: 0x2500000,
+    ///         length: 0x100000,
+    ///         mem_type: MtrrMemoryCacheType::WriteThrough,
+    ///     },
+    /// ];
+    ///
+    /// assert!(!RangeGenerator::ranges_overlap(&test_range, &existing_ranges));
+    ///
+    /// // Test overlapping case
+    /// let overlapping_range = MtrrMemoryRange {
+    ///     base_address: 0x1080000, // Overlaps with first existing range
+    ///     length: 0x100000,
+    ///     mem_type: MtrrMemoryCacheType::WriteBack,
+    /// };
+    ///
+    /// assert!(RangeGenerator::ranges_overlap(&overlapping_range, &existing_ranges));
+    /// ```
     fn ranges_overlap(range: &MtrrMemoryRange, ranges: &[MtrrMemoryRange]) -> bool {
         ranges.iter().any(|existing| {
             let range_end = range.base_address + range.length;
