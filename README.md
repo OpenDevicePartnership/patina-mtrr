@@ -1,5 +1,10 @@
 # Introduction
 
+[![release]][_release]
+[![commit]][_commit]
+[![ci]][_ci]
+[![codecov]][_codecov]
+
 MTRR(Memory Type Range Registers) Lib helps program MTRRs on x86_64
 architecture.
 
@@ -115,3 +120,12 @@ fn mtrr_lib_usage() {
 }
 
 ```
+
+[release]: https://img.shields.io/crates/v/patina_mtrr
+[_release]: https://github.com/OpenDevicePartnership/patina-mtrr/releases/latest
+[commit]: https://img.shields.io/github/commits-since/OpenDevicePartnership/patina-mtrr/latest/main?include_prereleases
+[_commit]: https://github.com/OpenDevicePartnership/patina-mtrr/commits/main/
+[ci]: https://github.com/OpenDevicePartnership/patina-mtrr/actions/workflows/ci-workflow.yml/badge.svg?branch=main&event=push
+[_ci]: https://github.com/OpenDevicePartnership/patina-mtrr/actions/workflows/ci-workflow.yml
+[codcov]: https://codecov.io/github/OpenDevicePartnership/patina-mtrr/graph/badge.svg?token=TUG4C3PK84
+[_codecov]: https://codecov.io/github/OpenDevicePartnership/patina-mtrr
