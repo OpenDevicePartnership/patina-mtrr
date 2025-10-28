@@ -8,10 +8,12 @@
 //!
 //! SPDX-License-Identifier: Apache-2.0
 
-use crate::Mtrr;
-use crate::mtrr::MtrrLib;
-use crate::structs::{MtrrMemoryCacheType, MtrrMemoryRange, MtrrVariableSetting, SIZE_1MB};
-use crate::tests::{config::*, mock_hal::MockHal};
+use crate::{
+    Mtrr,
+    mtrr::MtrrLib,
+    structs::{MtrrMemoryCacheType, MtrrMemoryRange, MtrrVariableSetting, SIZE_1MB},
+    tests::{config::*, mock_hal::MockHal},
+};
 
 /// Tracks memory cache type distribution for test patterns.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -477,9 +479,11 @@ impl Default for MtrrTestFixture {
 /// let (mock_hal, expected_settings) = create_variable_mtrr_test_setup();
 /// ```
 pub(crate) fn create_variable_mtrr_test_setup() -> (MockHal, crate::structs::MtrrSettings) {
-    use crate::hal::Hal;
-    use crate::structs::{MSR_IA32_MTRR_PHYSBASE0, MSR_IA32_MTRR_PHYSMASK0, MtrrSettings};
-    use crate::tests::support::{DeterministicGenerator, MtrrPairGenerator};
+    use crate::{
+        hal::Hal,
+        structs::{MSR_IA32_MTRR_PHYSBASE0, MSR_IA32_MTRR_PHYSMASK0, MtrrSettings},
+        tests::support::{DeterministicGenerator, MtrrPairGenerator},
+    };
 
     let system_parameter = DEFAULT_SYSTEM_PARAMETER;
     let mut expected_mtrr_settings = MtrrSettings::default();
@@ -514,11 +518,12 @@ pub(crate) fn create_variable_mtrr_test_setup() -> (MockHal, crate::structs::Mtr
 /// let (mock_hal, expected_fixed_settings) = create_fixed_mtrr_test_setup();
 /// ```
 pub(crate) fn create_fixed_mtrr_test_setup() -> (MockHal, crate::structs::MtrrFixedSettings) {
-    use crate::hal::Hal;
-    use crate::structs::{MTRR_NUMBER_OF_FIXED_MTRR, MtrrFixedSettings};
-    use crate::tests::config::FIXED_MTRR_INDICES;
-    use crate::tests::support::DeterministicGenerator;
-    use crate::utils::lshift_u64;
+    use crate::{
+        hal::Hal,
+        structs::{MTRR_NUMBER_OF_FIXED_MTRR, MtrrFixedSettings},
+        tests::{config::FIXED_MTRR_INDICES, support::DeterministicGenerator},
+        utils::lshift_u64,
+    };
 
     let system_parameter = DEFAULT_SYSTEM_PARAMETER;
     let mut expected_fixed_settings = MtrrFixedSettings::default();
@@ -551,12 +556,16 @@ pub(crate) fn create_fixed_mtrr_test_setup() -> (MockHal, crate::structs::MtrrFi
 /// let (mock_hal, expected_settings) = create_comprehensive_mtrr_test_setup();
 /// ```
 pub(crate) fn create_comprehensive_mtrr_test_setup() -> (MockHal, crate::structs::MtrrSettings) {
-    use crate::hal::Hal;
-    use crate::structs::{
-        MSR_IA32_MTRR_DEF_TYPE, MSR_IA32_MTRR_PHYSBASE0, MSR_IA32_MTRR_PHYSMASK0, MsrIa32MtrrDefType, MtrrSettings,
+    use crate::{
+        hal::Hal,
+        structs::{
+            MSR_IA32_MTRR_DEF_TYPE, MSR_IA32_MTRR_PHYSBASE0, MSR_IA32_MTRR_PHYSMASK0, MsrIa32MtrrDefType, MtrrSettings,
+        },
+        tests::{
+            config::FIXED_MTRR_INDICES,
+            support::{DeterministicGenerator, MtrrPairGenerator},
+        },
     };
-    use crate::tests::config::FIXED_MTRR_INDICES;
-    use crate::tests::support::{DeterministicGenerator, MtrrPairGenerator};
 
     let system_parameter = DEFAULT_SYSTEM_PARAMETER;
     let mut expected_settings = MtrrSettings {

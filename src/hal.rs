@@ -9,9 +9,7 @@
 //!
 #[allow(unused_imports)]
 use core::arch::asm;
-use core::arch::x86_64::__cpuid;
-use core::arch::x86_64::__cpuid_count;
-use core::arch::x86_64::CpuidResult;
+use core::arch::x86_64::{__cpuid, __cpuid_count, CpuidResult};
 
 /// HAL trait for MTRR Lib - This trait is used to abstract the hardware access
 /// layer for MTRR Lib. The reason for this, to make MTRR lib code unit testable

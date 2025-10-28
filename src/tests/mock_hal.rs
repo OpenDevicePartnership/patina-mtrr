@@ -11,16 +11,18 @@
 
 use core::arch::x86_64::CpuidResult;
 
-use crate::hal::Hal;
-use crate::mtrr::MtrrLib;
-use crate::structs::{
-    CPUID_EXTENDED_FUNCTION, CPUID_SIGNATURE, CPUID_VERSION_INFO, CPUID_VIR_PHY_ADDRESS_SIZE,
-    CpuidStructuredExtendedFeatureFlagsEcx, CpuidVersionInfoEdx, CpuidVirPhyAddressSizeEax, MSR_IA32_MTRR_DEF_TYPE,
-    MSR_IA32_MTRR_PHYSBASE0, MSR_IA32_MTRR_PHYSMASK0, MSR_IA32_MTRRCAP, MSR_IA32_TME_ACTIVATE,
-    MTRR_NUMBER_OF_FIXED_MTRR, MTRR_NUMBER_OF_VARIABLE_MTRR, MsrIa32MtrrDefType, MsrIa32MtrrPhysbaseRegister,
-    MsrIa32MtrrPhysmaskRegister, MsrIa32MtrrcapRegister, MsrIa32TmeActivateRegister, MtrrMemoryCacheType,
+use crate::{
+    hal::Hal,
+    mtrr::MtrrLib,
+    structs::{
+        CPUID_EXTENDED_FUNCTION, CPUID_SIGNATURE, CPUID_VERSION_INFO, CPUID_VIR_PHY_ADDRESS_SIZE,
+        CpuidStructuredExtendedFeatureFlagsEcx, CpuidVersionInfoEdx, CpuidVirPhyAddressSizeEax, MSR_IA32_MTRR_DEF_TYPE,
+        MSR_IA32_MTRR_PHYSBASE0, MSR_IA32_MTRR_PHYSMASK0, MSR_IA32_MTRRCAP, MSR_IA32_TME_ACTIVATE,
+        MTRR_NUMBER_OF_FIXED_MTRR, MTRR_NUMBER_OF_VARIABLE_MTRR, MsrIa32MtrrDefType, MsrIa32MtrrPhysbaseRegister,
+        MsrIa32MtrrPhysmaskRegister, MsrIa32MtrrcapRegister, MsrIa32TmeActivateRegister, MtrrMemoryCacheType,
+    },
+    tests::config::{FIXED_MTRR_INDICES, MtrrLibSystemParameter},
 };
-use crate::tests::config::{FIXED_MTRR_INDICES, MtrrLibSystemParameter};
 
 /// Mock HAL implementation for unit testing.
 ///
@@ -184,7 +186,7 @@ impl Hal for MockHal {
         if (msr_index >= MSR_IA32_MTRR_PHYSBASE0)
             && (msr_index <= (MSR_IA32_MTRR_PHYSMASK0 + (MTRR_NUMBER_OF_VARIABLE_MTRR as u32 * 2)))
         {
-            if msr_index % 2 == 0 {
+            if msr_index.is_multiple_of(2) {
                 let index = ((msr_index - MSR_IA32_MTRR_PHYSBASE0) >> 1) as usize;
                 return self.variable_mtrrs_phys_base[index].into();
             } else {
@@ -215,7 +217,7 @@ impl Hal for MockHal {
         if (msr_index >= MSR_IA32_MTRR_PHYSBASE0)
             && (msr_index <= (MSR_IA32_MTRR_PHYSMASK0 + (MTRR_NUMBER_OF_VARIABLE_MTRR as u32 * 2)))
         {
-            if msr_index % 2 == 0 {
+            if msr_index.is_multiple_of(2) {
                 let index = ((msr_index - MSR_IA32_MTRR_PHYSBASE0) >> 1) as usize;
                 self.variable_mtrrs_phys_base[index] = MsrIa32MtrrPhysbaseRegister::from_bits(value);
                 return;

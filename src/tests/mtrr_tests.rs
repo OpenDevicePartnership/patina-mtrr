@@ -15,20 +15,16 @@ use crate::{
         MtrrFixedSettings, MtrrMemoryCacheType, MtrrMemoryRange, MtrrSettings, MtrrVariableSettings,
     },
     tests::{
+        MtrrLibSystemParameter,
         config::SystemParameterBuilder,
-        fixtures::{MtrrTestFixture, create_comprehensive_mtrr_test_setup},
+        fixtures::{MemoryTypeCounts, MtrrTestFixture, create_comprehensive_mtrr_test_setup},
+        mock_hal::create_mtrr_lib_with_mock_hal,
+        support::{DeterministicGenerator, MtrrPairGenerator, TestResultCollector, get_effective_memory_ranges},
     },
-};
-use crate::{
-    tests::MtrrLibSystemParameter,
-    tests::fixtures::MemoryTypeCounts,
-    tests::mock_hal::create_mtrr_lib_with_mock_hal,
-    tests::support::{DeterministicGenerator, MtrrPairGenerator, TestResultCollector, get_effective_memory_ranges},
 };
 use std::panic;
 
-use crate::Mtrr;
-use crate::tests::config::SYSTEM_PARAMETERS;
+use crate::{Mtrr, tests::config::SYSTEM_PARAMETERS};
 
 //
 //  Compare the actual memory ranges against expected memory ranges and return PASS when they match.

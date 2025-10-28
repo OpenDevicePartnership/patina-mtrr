@@ -10,53 +10,24 @@
 // Below clippy override is enforced to match the Rust code with the C MtrrLib
 // implementation
 #![allow(clippy::needless_range_loop)]
-use crate::Mtrr;
-use crate::error::MtrrError;
-use crate::error::MtrrResult;
-use crate::hal::Hal;
-use crate::hal::X64Hal;
-use crate::structs::BIT7;
-use crate::structs::BIT11;
-use crate::structs::CLEAR_SEED;
-use crate::structs::CPUID_EXTENDED_FUNCTION;
-use crate::structs::CPUID_SIGNATURE;
-use crate::structs::CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS;
-use crate::structs::CPUID_VERSION_INFO;
-use crate::structs::CPUID_VIR_PHY_ADDRESS_SIZE;
-use crate::structs::CpuidStructuredExtendedFeatureFlagsEcx;
-use crate::structs::CpuidVirPhyAddressSizeEax;
-use crate::structs::MSR_IA32_MTRR_DEF_TYPE;
-use crate::structs::MSR_IA32_MTRR_PHYSBASE0;
-use crate::structs::MSR_IA32_MTRR_PHYSMASK0;
-use crate::structs::MSR_IA32_MTRRCAP;
-use crate::structs::MSR_IA32_TME_ACTIVATE;
-use crate::structs::MTRR_LIB_FIXED_MTRR_TABLE;
-use crate::structs::MTRR_NUMBER_OF_FIXED_MTRR;
-use crate::structs::MTRR_NUMBER_OF_LOCAL_MTRR_RANGES;
-use crate::structs::MTRR_NUMBER_OF_VARIABLE_MTRR;
-use crate::structs::MTRR_NUMBER_OF_WORKING_MTRR_RANGES;
-use crate::structs::MsrIa32MtrrDefType;
-use crate::structs::MsrIa32TmeActivateRegister;
-use crate::structs::MtrrContext;
-use crate::structs::MtrrFixedSettings;
-use crate::structs::MtrrLibAddress;
-use crate::structs::MtrrMemoryCacheType;
-use crate::structs::MtrrMemoryRange;
-use crate::structs::MtrrSettings;
-use crate::structs::MtrrVariableSetting;
-use crate::structs::MtrrVariableSettings;
-use crate::structs::OR_SEED;
-use crate::structs::SCRATCH_BUFFER_SIZE;
-use crate::structs::SIZE_1MB;
-use crate::utils::get_power_of_two_64;
-use crate::utils::high_bit_set_64;
-use crate::utils::is_pow2;
-use crate::utils::lshift_u64;
-use crate::utils::mult_u64x32;
-use crate::utils::rshift_u64;
+use crate::{
+    Mtrr,
+    error::{MtrrError, MtrrResult},
+    hal::{Hal, X64Hal},
+    structs::{
+        BIT7, BIT11, CLEAR_SEED, CPUID_EXTENDED_FUNCTION, CPUID_SIGNATURE, CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS,
+        CPUID_VERSION_INFO, CPUID_VIR_PHY_ADDRESS_SIZE, CpuidStructuredExtendedFeatureFlagsEcx,
+        CpuidVirPhyAddressSizeEax, MSR_IA32_MTRR_DEF_TYPE, MSR_IA32_MTRR_PHYSBASE0, MSR_IA32_MTRR_PHYSMASK0,
+        MSR_IA32_MTRRCAP, MSR_IA32_TME_ACTIVATE, MTRR_LIB_FIXED_MTRR_TABLE, MTRR_NUMBER_OF_FIXED_MTRR,
+        MTRR_NUMBER_OF_LOCAL_MTRR_RANGES, MTRR_NUMBER_OF_VARIABLE_MTRR, MTRR_NUMBER_OF_WORKING_MTRR_RANGES,
+        MsrIa32MtrrDefType, MsrIa32TmeActivateRegister, MtrrContext, MtrrFixedSettings, MtrrLibAddress,
+        MtrrMemoryCacheType, MtrrMemoryRange, MtrrSettings, MtrrVariableSetting, MtrrVariableSettings, OR_SEED,
+        SCRATCH_BUFFER_SIZE, SIZE_1MB,
+    },
+    utils::{get_power_of_two_64, high_bit_set_64, is_pow2, lshift_u64, mult_u64x32, rshift_u64},
+};
 use alloc::vec::Vec;
-use core::mem::size_of;
-use core::ptr::write_bytes;
+use core::{mem::size_of, ptr::write_bytes};
 
 #[cfg(test)]
 use crate::structs::VariableMtrr;
@@ -266,7 +237,7 @@ impl<H: Hal> MtrrLib<H> {
 
         // Find the begin offset in fixed MTRR and calculate byte offset of left shift
         let entry = &MTRR_LIB_FIXED_MTRR_TABLE[msr_index as usize];
-        if ((*base - entry.base_address as u64) % entry.length as u64) != 0 {
+        if !(*base - entry.base_address as u64).is_multiple_of(entry.length as u64) {
             return Err(MtrrError::FixedRangeMtrrBaseAddressNotAligned);
         }
 
@@ -278,7 +249,7 @@ impl<H: Hal> MtrrLib<H> {
         if *length >= sub_length {
             right_byte_shift = 0;
         } else {
-            if (*length % entry.length as u64) != 0 {
+            if !(*length).is_multiple_of(entry.length as u64) {
                 return Err(MtrrError::FixedRangeMtrrLengthNotAligned);
             }
 
