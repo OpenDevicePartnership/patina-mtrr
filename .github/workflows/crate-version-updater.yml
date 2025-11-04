@@ -22,7 +22,7 @@ on:
 jobs:
   crate-version-update-pr:
     name: Run
-    uses: OpenDevicePartnership/patina-devops/.github/workflows/CrateVersionUpdater.yml@v0.2.1
+    uses: OpenDevicePartnership/patina-devops/.github/workflows/CrateVersionUpdater.yml@v0.2.2
     with:
       ignore-prefix: 'v'
       create-pr: ${{ github.event_name == 'workflow_dispatch' }}
