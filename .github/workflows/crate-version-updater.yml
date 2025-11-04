@@ -24,7 +24,7 @@ jobs:
     name: Run
     uses: OpenDevicePartnership/patina-devops/.github/workflows/CrateVersionUpdater.yml@v0.2.0
     with:
-      ignore-prefix: 'patina-v'
+      ignore-prefix: 'v'
       create-pr: ${{ github.event_name == 'workflow_dispatch' }}
     secrets: inherit
     permissions:
