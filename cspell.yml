@@ -35,6 +35,7 @@ words:
   - hlength
   - mawau
   - maxphysaddr
+  - mdbook
   - mktme
   - mtrrcap
   - mtrrlib
@@ -42,6 +43,9 @@ words:
   - nomem
   - ospke
   - pciexbar
+  - pdata
+  - pdbaltpath
+  - pdbhelper
   - prefetchwt
   - rdmsr
   - rdpid
