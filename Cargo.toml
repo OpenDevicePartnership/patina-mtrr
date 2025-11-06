@@ -8,7 +8,7 @@ repository = "https://github.com/OpenDevicePartnership/patina-mtrr"
 keywords = ["mtrr"]
 
 [dependencies]
-bitfield-struct = "0.10"
+bitfield-struct = "0.12"
 cfg-if = "1"
 
 [dev-dependencies]
