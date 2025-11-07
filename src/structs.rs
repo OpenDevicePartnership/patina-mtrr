@@ -104,6 +104,23 @@ pub enum MtrrMemoryCacheType {
     Invalid = 7,
 }
 
+#[coverage(off)]
+impl core::fmt::Display for MtrrMemoryCacheType {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let type_str = match self {
+            MtrrMemoryCacheType::Uncacheable => "Uncached",
+            MtrrMemoryCacheType::WriteCombining => "WriteCombining",
+            MtrrMemoryCacheType::Reserved1 => "Reserved1",
+            MtrrMemoryCacheType::Reserved2 => "Reserved2",
+            MtrrMemoryCacheType::WriteThrough => "WriteThrough",
+            MtrrMemoryCacheType::WriteProtected => "WriteProtected",
+            MtrrMemoryCacheType::WriteBack => "WriteBack",
+            MtrrMemoryCacheType::Invalid => "Invalid",
+        };
+        write!(f, "{type_str}")
+    }
+}
+
 impl From<u8> for MtrrMemoryCacheType {
     fn from(value: u8) -> Self {
         match value {
