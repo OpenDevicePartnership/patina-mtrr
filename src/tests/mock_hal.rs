@@ -9,10 +9,8 @@
 #![allow(unused_imports)]
 #![allow(clippy::needless_range_loop)]
 
-use core::arch::x86_64::CpuidResult;
-
 use crate::{
-    hal::Hal,
+    hal::{CpuidResult, Hal},
     mtrr::MtrrLib,
     structs::{
         CPUID_EXTENDED_FUNCTION, CPUID_SIGNATURE, CPUID_VERSION_INFO, CPUID_VIR_PHY_ADDRESS_SIZE,

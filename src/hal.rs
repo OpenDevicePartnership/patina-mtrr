@@ -9,7 +9,19 @@
 //!
 #[allow(unused_imports)]
 use core::arch::asm;
-use core::arch::x86_64::{__cpuid, __cpuid_count, CpuidResult};
+#[cfg(target_arch = "x86_64")]
+pub use core::arch::x86_64::CpuidResult;
+#[cfg(target_arch = "x86_64")]
+use core::arch::x86_64::{__cpuid, __cpuid_count};
+
+// For testing when cross compiling on non-x64 architectures, re-define CpuidResult
+#[cfg(not(target_arch = "x86_64"))]
+pub struct CpuidResult {
+    pub eax: u32,
+    pub ebx: u32,
+    pub ecx: u32,
+    pub edx: u32,
+}
 
 /// HAL trait for MTRR Lib - This trait is used to abstract the hardware access
 /// layer for MTRR Lib. The reason for this, to make MTRR lib code unit testable
@@ -50,6 +62,8 @@ impl Default for X64Hal {
     }
 }
 
+#[coverage(off)]
+#[cfg(target_arch = "x86_64")]
 impl Hal for X64Hal {
     fn save_and_disable_interrupts(&mut self) -> bool {
         let interrupt_state = self.get_interrupt_state();
@@ -203,5 +217,81 @@ impl Hal for X64Hal {
 
     fn asm_cpuid_ex(&self, function: u32, sub_function: u32) -> CpuidResult {
         unsafe { __cpuid_count(function, sub_function) }
+    }
+}
+
+#[coverage(off)]
+#[cfg(not(target_arch = "x86_64"))]
+impl Hal for X64Hal {
+    fn save_and_disable_interrupts(&mut self) -> bool {
+        unimplemented!()
+    }
+
+    fn enable_interrupts(&mut self) {
+        unimplemented!()
+    }
+
+    fn disable_interrupts(&mut self) {
+        unimplemented!()
+    }
+
+    fn asm_disable_cache(&mut self) {
+        unimplemented!()
+    }
+
+    fn asm_enable_cache(&mut self) {
+        unimplemented!()
+    }
+
+    fn set_interrupt_state(&mut self, _interrupt_state: bool) {
+        unimplemented!()
+    }
+
+    fn get_interrupt_state(&self) -> bool {
+        unimplemented!()
+    }
+
+    /// Write CR3 register. Also invalidates TLB.
+    fn asm_write_cr3(&mut self, _value: u64) {
+        unimplemented!()
+    }
+
+    /// Read CR3 register.
+    fn asm_read_cr3(&self) -> u64 {
+        unimplemented!()
+    }
+
+    /// Write CR4 register. Also invalidates TLB.
+    fn asm_write_cr4(&mut self, _value: u64) {
+        unimplemented!()
+    }
+
+    /// Read CR4 register.
+    fn asm_read_cr4(&self) -> u64 {
+        unimplemented!()
+    }
+
+    fn cpu_flush_tlb(&mut self) {
+        unimplemented!()
+    }
+
+    fn asm_read_msr64(&self, _msr: u32) -> u64 {
+        unimplemented!()
+    }
+
+    fn asm_write_msr64(&mut self, _msr: u32, _value: u64) {
+        unimplemented!()
+    }
+
+    fn asm_msr_and_then_or_64(&mut self, _index: u32, _and_data: u64, _or_data: u64) -> u64 {
+        unimplemented!()
+    }
+
+    fn asm_cpuid(&self, _function: u32) -> CpuidResult {
+        unimplemented!()
+    }
+
+    fn asm_cpuid_ex(&self, _function: u32, _sub_function: u32) -> CpuidResult {
+        unimplemented!()
     }
 }
