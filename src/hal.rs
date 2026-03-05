@@ -212,11 +212,11 @@ impl Hal for X64Hal {
     }
 
     fn asm_cpuid(&self, function: u32) -> CpuidResult {
-        unsafe { __cpuid(function) }
+        __cpuid(function)
     }
 
     fn asm_cpuid_ex(&self, function: u32, sub_function: u32) -> CpuidResult {
-        unsafe { __cpuid_count(function, sub_function) }
+        __cpuid_count(function, sub_function)
     }
 }
 
