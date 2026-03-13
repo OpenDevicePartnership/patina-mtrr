@@ -963,7 +963,6 @@ fn unit_test_get_memory_ranges_returns_mtrr_memory_ranges() {
 
     // Basic properties
     assert!(!memory_ranges.is_empty(), "Should have at least one range");
-    assert!(memory_ranges.len() > 0, "Length should be > 0");
 
     // Deref to slice works
     let slice: &[MtrrMemoryRange] = &memory_ranges;
