@@ -676,7 +676,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_setti
 
         let returned_memory_ranges = mtrrlib.get_memory_ranges();
         assert!(returned_memory_ranges.is_ok());
-        let returned_memory_ranges = returned_memory_ranges.unwrap();
+        let returned_memory_ranges: Vec<MtrrMemoryRange> = returned_memory_ranges.unwrap().into_iter().collect();
         println!("--- Returned Memory Ranges [{}] ---", returned_memory_ranges.len());
         dump_memory_ranges(&returned_memory_ranges, returned_memory_ranges.len());
         verify_memory_ranges(
@@ -796,7 +796,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr
 
         let returned_memory_ranges = mtrrlib.get_memory_ranges();
         assert!(returned_memory_ranges.is_ok());
-        let returned_memory_ranges = returned_memory_ranges.unwrap();
+        let returned_memory_ranges: Vec<MtrrMemoryRange> = returned_memory_ranges.unwrap().into_iter().collect();
         println!("--- Returned Memory Ranges [{}] ---", returned_memory_ranges.len());
         dump_memory_ranges(&returned_memory_ranges, returned_memory_ranges.len());
         verify_memory_ranges(
@@ -847,4 +847,54 @@ fn unit_test_mtrr_lib_usage() {
 
     let status = mtrrlib.set_memory_attribute(0xB0000000, BASE_4GB - 0xB0000000, MtrrMemoryCacheType::Uncacheable);
     assert!(status.is_ok())
+}
+
+#[test]
+fn unit_test_get_memory_ranges_returns_iterator() {
+    // Verify that get_memory_ranges returns an IntoIterator that can be
+    // collected, iterated, and used in for loops.
+    let mut mtrrlib = MtrrTestFixture::new()
+        .with_config(|config| {
+            config
+                .with_physical_address_bits(38)
+                .with_variable_mtrr_count(8)
+                .with_default_cache_type(MtrrMemoryCacheType::Uncacheable)
+        })
+        .mtrr_lib();
+
+    // Program some ranges
+    let mut mtrr_settings = mtrrlib.get_all_mtrrs().unwrap();
+    mtrr_settings.mtrr_def_type_reg.set_mem_type(MtrrMemoryCacheType::WriteBack as u8);
+    mtrrlib.set_all_mtrrs(&mtrr_settings);
+
+    let status = mtrrlib.set_memory_attribute(0xB0000000, 0x10000000, MtrrMemoryCacheType::Uncacheable);
+    assert!(status.is_ok());
+
+    // Collect into Vec
+    let memory_ranges: Vec<MtrrMemoryRange> = mtrrlib.get_memory_ranges().unwrap().into_iter().collect();
+    assert!(!memory_ranges.is_empty(), "Should have at least one range");
+    assert_eq!(memory_ranges[0].base_address, 0x0, "First range should start at 0");
+
+    // Verify all ranges have nonzero length
+    for range in &memory_ranges {
+        assert!(range.length > 0, "Each range should have nonzero length");
+    }
+
+    // Can pass collected result to functions expecting &[MtrrMemoryRange]
+    fn takes_slice(s: &[MtrrMemoryRange]) -> usize {
+        s.len()
+    }
+    assert_eq!(takes_slice(&memory_ranges), memory_ranges.len());
+
+    // ExactSizeIterator: verify len() on the iterator
+    let iter = mtrrlib.get_memory_ranges().unwrap().into_iter();
+    assert_eq!(iter.count(), memory_ranges.len(), "Iterator should yield the same number of elements");
+
+    // Can use directly in for loop via IntoIterator
+    let mut count = 0;
+    for range in mtrrlib.get_memory_ranges().unwrap() {
+        assert!(range.length > 0);
+        count += 1;
+    }
+    assert_eq!(count, memory_ranges.len());
 }

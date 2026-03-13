@@ -26,7 +26,6 @@ use crate::{
     },
     utils::{get_power_of_two_64, high_bit_set_64, is_pow2, lshift_u64, mult_u64x32, rshift_u64},
 };
-use alloc::vec::Vec;
 use core::{mem::size_of, ptr::write_bytes};
 
 #[cfg(test)]
@@ -39,6 +38,38 @@ fn m(start: u16, index: u16, vertex_count: u16) -> usize {
 fn o(start: u16, index: u16, vertex_count: u16) -> usize {
     (index as usize) * vertex_count as usize + (start as usize)
 }
+
+/// An iterator over MTRR memory ranges backed by a fixed-size stack-allocated array.
+///
+/// This avoids heap allocation by storing the ranges inline and allow the caller to
+/// invoke the [`MtrrLib::get_memory_ranges_impl`] method without the global allocator
+/// being ready.
+struct MtrrRangeIter {
+    ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_LOCAL_MTRR_RANGES],
+    index: usize,
+    count: usize,
+}
+
+impl Iterator for MtrrRangeIter {
+    type Item = MtrrMemoryRange;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.count {
+            let item = self.ranges[self.index];
+            self.index += 1;
+            Some(item)
+        } else {
+            None
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = self.count - self.index;
+        (remaining, Some(remaining))
+    }
+}
+
+impl ExactSizeIterator for MtrrRangeIter {}
 
 pub struct MtrrLib<H: Hal = X64Hal> {
     hal: H,
@@ -1987,7 +2018,7 @@ impl<H: Hal> MtrrLib<H> {
 
     ///  This function returns a Ranges array containing the memory cache types
     ///  of all memory addresses.
-    pub fn get_memory_ranges_impl(&self) -> MtrrResult<Vec<MtrrMemoryRange>> {
+    pub fn get_memory_ranges_impl(&self) -> MtrrResult<impl IntoIterator<Item = MtrrMemoryRange>> {
         let mut raw_variable_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_VARIABLE_MTRR] = Default::default();
         let mut all_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_LOCAL_MTRR_RANGES] =
             [MtrrMemoryRange::default(); MTRR_NUMBER_OF_LOCAL_MTRR_RANGES];
@@ -2037,7 +2068,7 @@ impl<H: Hal> MtrrLib<H> {
             }
         }
 
-        Ok(all_ranges[..all_range_count].to_vec())
+        Ok(MtrrRangeIter { ranges: all_ranges, index: 0, count: all_range_count })
     }
 
     ///  This function prints all MTRRs for debugging.
@@ -2093,13 +2124,13 @@ impl<H: Hal> MtrrLib<H> {
         // Dump MTRR setting in ranges
         println!("Memory Ranges:");
         println!("====================================");
-        for index in 0..ranges.len() {
-            let cache_type_name = MTRR_MEMORY_CACHE_TYPE_SHORT_NAME[ranges[index].mem_type as usize];
+        for range in ranges {
+            let cache_type_name = MTRR_MEMORY_CACHE_TYPE_SHORT_NAME[range.mem_type as usize];
             println!(
                 "{}:{:#016x}-{:#016x}",
                 cache_type_name,
-                ranges[index].base_address,
-                ranges[index].base_address + ranges[index].length - 1
+                range.base_address,
+                range.base_address + range.length - 1
             );
         }
     }
@@ -2145,8 +2176,8 @@ impl<H: Hal> MtrrLib<H> {
         &self,
         mtrr_valid_bits_mask: u64,
         mtrr_valid_address_mask: u64,
-    ) -> Vec<VariableMtrr> {
-        let mut variable_mtrr_ranges: Vec<VariableMtrr> = Vec::new();
+    ) -> std::vec::Vec<VariableMtrr> {
+        let mut variable_mtrr_ranges: std::vec::Vec<VariableMtrr> = std::vec::Vec::new();
 
         // Check if MTRR is supported
         if !self.is_supported_impl() {
@@ -2210,7 +2241,7 @@ impl<H: Hal> Mtrr for MtrrLib<H> {
         self.is_supported_impl()
     }
 
-    fn get_memory_ranges(&self) -> MtrrResult<Vec<MtrrMemoryRange>> {
+    fn get_memory_ranges(&self) -> MtrrResult<impl IntoIterator<Item = MtrrMemoryRange>> {
         self.get_memory_ranges_impl()
     }
 
