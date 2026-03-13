@@ -44,7 +44,7 @@ fn o(start: u16, index: u16, vertex_count: u16) -> usize {
 /// This avoids heap allocation by storing the ranges inline and allow the caller to
 /// invoke the [`MtrrLib::get_memory_ranges_impl`] method without the global allocator
 /// being ready.
-pub struct MtrrRangeIter {
+struct MtrrRangeIter {
     ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_LOCAL_MTRR_RANGES],
     index: usize,
     count: usize,
@@ -2018,7 +2018,7 @@ impl<H: Hal> MtrrLib<H> {
 
     ///  This function returns a Ranges array containing the memory cache types
     ///  of all memory addresses.
-    pub fn get_memory_ranges_impl(&self) -> MtrrResult<MtrrRangeIter> {
+    pub fn get_memory_ranges_impl(&self) -> MtrrResult<impl IntoIterator<Item = MtrrMemoryRange> {
         let mut raw_variable_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_VARIABLE_MTRR] = Default::default();
         let mut all_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_LOCAL_MTRR_RANGES] =
             [MtrrMemoryRange::default(); MTRR_NUMBER_OF_LOCAL_MTRR_RANGES];
