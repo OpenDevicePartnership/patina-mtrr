@@ -2018,7 +2018,7 @@ impl<H: Hal> MtrrLib<H> {
 
     ///  This function returns a Ranges array containing the memory cache types
     ///  of all memory addresses.
-    pub fn get_memory_ranges_impl(&self) -> MtrrResult<impl IntoIterator<Item = MtrrMemoryRange> {
+    pub fn get_memory_ranges_impl(&self) -> MtrrResult<impl IntoIterator<Item = MtrrMemoryRange>> {
         let mut raw_variable_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_VARIABLE_MTRR] = Default::default();
         let mut all_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_LOCAL_MTRR_RANGES] =
             [MtrrMemoryRange::default(); MTRR_NUMBER_OF_LOCAL_MTRR_RANGES];
