@@ -21,8 +21,8 @@ use crate::{
         MSR_IA32_MTRRCAP, MSR_IA32_TME_ACTIVATE, MTRR_LIB_FIXED_MTRR_TABLE, MTRR_NUMBER_OF_FIXED_MTRR,
         MTRR_NUMBER_OF_LOCAL_MTRR_RANGES, MTRR_NUMBER_OF_VARIABLE_MTRR, MTRR_NUMBER_OF_WORKING_MTRR_RANGES,
         MsrIa32MtrrDefType, MsrIa32TmeActivateRegister, MtrrContext, MtrrFixedSettings, MtrrLibAddress,
-        MtrrMemoryCacheType, MtrrMemoryRange, MtrrMemoryRanges, MtrrSettings, MtrrVariableSetting, MtrrVariableSettings, OR_SEED,
-        SCRATCH_BUFFER_SIZE, SIZE_1MB,
+        MtrrMemoryCacheType, MtrrMemoryRange, MtrrMemoryRanges, MtrrSettings, MtrrVariableSetting,
+        MtrrVariableSettings, OR_SEED, SCRATCH_BUFFER_SIZE, SIZE_1MB,
     },
     utils::{get_power_of_two_64, high_bit_set_64, is_pow2, lshift_u64, mult_u64x32, rshift_u64},
 };
