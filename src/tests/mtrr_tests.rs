@@ -848,3 +848,152 @@ fn unit_test_mtrr_lib_usage() {
     let status = mtrrlib.set_memory_attribute(0xB0000000, BASE_4GB - 0xB0000000, MtrrMemoryCacheType::Uncacheable);
     assert!(status.is_ok())
 }
+
+#[test]
+fn unit_test_mtrr_memory_ranges_empty() {
+    use crate::structs::{MTRR_NUMBER_OF_LOCAL_MTRR_RANGES, MtrrMemoryRanges};
+
+    let ranges = MtrrMemoryRanges::new(
+        [MtrrMemoryRange::default(); MTRR_NUMBER_OF_LOCAL_MTRR_RANGES],
+        0,
+    );
+
+    assert!(ranges.is_empty(), "Ranges with count 0 should be empty");
+    assert_eq!(ranges.len(), 0, "Length should be 0");
+    assert_eq!(ranges.as_slice().len(), 0, "Slice should be empty");
+    assert_eq!(ranges.iter().count(), 0, "Iterator should yield nothing");
+
+    // Deref to slice
+    let slice: &[MtrrMemoryRange] = &ranges;
+    assert!(slice.is_empty(), "Deref slice should be empty");
+
+    // IntoIterator
+    let mut count = 0;
+    for _ in &ranges {
+        count += 1;
+    }
+    assert_eq!(count, 0, "IntoIterator should yield nothing for empty ranges");
+}
+
+#[test]
+fn unit_test_mtrr_memory_ranges_with_elements() {
+    use crate::structs::{MTRR_NUMBER_OF_LOCAL_MTRR_RANGES, MtrrMemoryRanges};
+
+    let mut backing = [MtrrMemoryRange::default(); MTRR_NUMBER_OF_LOCAL_MTRR_RANGES];
+    backing[0] = MtrrMemoryRange::new(0x0, 0x1000, MtrrMemoryCacheType::WriteBack);
+    backing[1] = MtrrMemoryRange::new(0x1000, 0x2000, MtrrMemoryCacheType::Uncacheable);
+    backing[2] = MtrrMemoryRange::new(0x3000, 0x1000, MtrrMemoryCacheType::WriteThrough);
+
+    let ranges = MtrrMemoryRanges::new(backing, 3);
+
+    assert!(!ranges.is_empty(), "Should not be empty with 3 elements");
+    assert_eq!(ranges.len(), 3, "Length should be 3");
+    assert_eq!(ranges.as_slice().len(), 3, "Slice length should be 3");
+
+    // Verify contents via Deref
+    let slice: &[MtrrMemoryRange] = &ranges;
+    assert_eq!(slice[0].base_address, 0x0);
+    assert_eq!(slice[0].length, 0x1000);
+    assert_eq!(slice[0].mem_type, MtrrMemoryCacheType::WriteBack);
+    assert_eq!(slice[1].base_address, 0x1000);
+    assert_eq!(slice[1].mem_type, MtrrMemoryCacheType::Uncacheable);
+    assert_eq!(slice[2].base_address, 0x3000);
+    assert_eq!(slice[2].mem_type, MtrrMemoryCacheType::WriteThrough);
+
+    // Verify iter()
+    let collected: Vec<_> = ranges.iter().collect();
+    assert_eq!(collected.len(), 3);
+    assert_eq!(collected[0].base_address, 0x0);
+    assert_eq!(collected[2].base_address, 0x3000);
+
+    // Verify IntoIterator
+    let mut into_iter_count = 0;
+    for range in &ranges {
+        assert!(range.length > 0);
+        into_iter_count += 1;
+    }
+    assert_eq!(into_iter_count, 3, "IntoIterator should yield 3 elements");
+}
+
+#[test]
+fn unit_test_mtrr_memory_ranges_only_exposes_active_count() {
+    use crate::structs::{MTRR_NUMBER_OF_LOCAL_MTRR_RANGES, MtrrMemoryRanges};
+
+    // Fill entire backing array but set count to 2 — only first 2 should be visible
+    let mut backing = [MtrrMemoryRange::default(); MTRR_NUMBER_OF_LOCAL_MTRR_RANGES];
+    for (i, entry) in backing.iter_mut().enumerate() {
+        entry.base_address = (i as u64) * 0x1000;
+        entry.length = 0x1000;
+        entry.mem_type = MtrrMemoryCacheType::WriteBack;
+    }
+
+    let ranges = MtrrMemoryRanges::new(backing, 2);
+
+    assert_eq!(ranges.len(), 2, "Only 2 should be visible");
+    assert_eq!(ranges.as_slice().len(), 2);
+    assert_eq!(ranges.iter().count(), 2);
+
+    let slice: &[MtrrMemoryRange] = &ranges;
+    assert_eq!(slice.len(), 2, "Deref should limit to count");
+    assert_eq!(slice[0].base_address, 0x0);
+    assert_eq!(slice[1].base_address, 0x1000);
+}
+
+#[test]
+fn unit_test_get_memory_ranges_returns_mtrr_memory_ranges() {
+    // Verify that get_memory_ranges returns MtrrMemoryRanges and that it can be
+    // iterated, sliced, and indexed.
+    let mut mtrrlib = MtrrTestFixture::new()
+        .with_config(|config| {
+            config
+                .with_physical_address_bits(38)
+                .with_variable_mtrr_count(8)
+                .with_default_cache_type(MtrrMemoryCacheType::Uncacheable)
+        })
+        .mtrr_lib();
+
+    // Program some ranges
+    let mut mtrr_settings = mtrrlib.get_all_mtrrs().unwrap();
+    mtrr_settings.mtrr_def_type_reg.set_mem_type(MtrrMemoryCacheType::WriteBack as u8);
+    mtrrlib.set_all_mtrrs(&mtrr_settings);
+
+    let status = mtrrlib.set_memory_attribute(0xB0000000, 0x10000000, MtrrMemoryCacheType::Uncacheable);
+    assert!(status.is_ok());
+
+    let memory_ranges = mtrrlib.get_memory_ranges();
+    assert!(memory_ranges.is_ok(), "get_memory_ranges should succeed");
+    let memory_ranges = memory_ranges.unwrap();
+
+    // Basic properties
+    assert!(!memory_ranges.is_empty(), "Should have at least one range");
+    assert!(memory_ranges.len() > 0, "Length should be > 0");
+
+    // Deref to slice works
+    let slice: &[MtrrMemoryRange] = &memory_ranges;
+    assert_eq!(slice.len(), memory_ranges.len());
+
+    // as_slice works
+    assert_eq!(memory_ranges.as_slice().len(), memory_ranges.len());
+
+    // iter works
+    let iter_count = memory_ranges.iter().count();
+    assert_eq!(iter_count, memory_ranges.len());
+
+    // IntoIterator works
+    let mut into_iter_count = 0;
+    for range in &memory_ranges {
+        assert!(range.length > 0, "Each range should have nonzero length");
+        into_iter_count += 1;
+    }
+    assert_eq!(into_iter_count, memory_ranges.len());
+
+    // Indexing via Deref works
+    let first = &memory_ranges[0];
+    assert_eq!(first.base_address, 0x0, "First range should start at 0");
+
+    // Can pass to functions expecting &[MtrrMemoryRange]
+    fn takes_slice(s: &[MtrrMemoryRange]) -> usize {
+        s.len()
+    }
+    assert_eq!(takes_slice(&memory_ranges), memory_ranges.len());
+}
