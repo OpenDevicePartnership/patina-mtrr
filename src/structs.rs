@@ -152,6 +152,59 @@ impl MtrrMemoryRange {
     }
 }
 
+/// A fixed-capacity collection of MTRR memory ranges.
+///
+/// This avoids heap allocation by using a stack-allocated fixed-size array
+/// sized to `MTRR_NUMBER_OF_LOCAL_MTRR_RANGES`. It implements [`Deref`] to
+/// `[MtrrMemoryRange]` so it can be used transparently wherever a slice is
+/// expected, and [`IntoIterator`] for convenient iteration.
+pub struct MtrrMemoryRanges {
+    pub(crate) ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_LOCAL_MTRR_RANGES],
+    pub(crate) count: usize,
+}
+
+impl MtrrMemoryRanges {
+    /// Creates a new `MtrrMemoryRanges` from an array and an active element count.
+    pub(crate) fn new(ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_LOCAL_MTRR_RANGES], count: usize) -> Self {
+        Self { ranges, count }
+    }
+
+    /// Returns the number of active memory ranges.
+    pub fn len(&self) -> usize {
+        self.count
+    }
+
+    /// Returns `true` if there are no active memory ranges.
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
+    }
+
+    /// Returns the active ranges as a slice.
+    pub fn as_slice(&self) -> &[MtrrMemoryRange] {
+        &self.ranges[..self.count]
+    }
+
+    /// Returns an iterator over the active memory ranges.
+    pub fn iter(&self) -> impl Iterator<Item = &MtrrMemoryRange> {
+        self.ranges[..self.count].iter()
+    }
+}
+
+impl core::ops::Deref for MtrrMemoryRanges {
+    type Target = [MtrrMemoryRange];
+    fn deref(&self) -> &Self::Target {
+        &self.ranges[..self.count]
+    }
+}
+
+impl<'a> IntoIterator for &'a MtrrMemoryRanges {
+    type Item = &'a MtrrMemoryRange;
+    type IntoIter = core::slice::Iter<'a, MtrrMemoryRange>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.ranges[..self.count].iter()
+    }
+}
+
 //
 // structs/definitions internal to the MTRR library
 //

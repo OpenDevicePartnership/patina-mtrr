@@ -48,7 +48,7 @@ pub fn set_memory_attributes(
 
 pub fn get_memory_ranges(
     &self
-) -> MtrrResult<Vec<MtrrMemoryRange>>;
+) -> MtrrResult<MtrrMemoryRanges>;
 
 pub fn debug_print_all_mtrrs(&self);
 ```

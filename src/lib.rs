@@ -39,7 +39,7 @@
 //!
 //!     pub fn get_memory_ranges(
 //!         &self
-//!     ) -> MtrrResult<Vec<MtrrMemoryRange>>;
+//!     ) -> MtrrResult<MtrrMemoryRanges>;
 //!
 //!     pub fn debug_print_all_mtrrs(&self);
 //! }
@@ -119,10 +119,8 @@
 #![cfg_attr(all(not(feature = "std"), not(test)), no_std)]
 #![feature(coverage_attribute)]
 
-extern crate alloc;
 cfg_if::cfg_if! {
     if #[cfg(not(all(target_os = "uefi", target_arch = "aarch64")))] {
-    use alloc::vec::Vec;
     use error::MtrrResult;
     use hal::X64Hal;
     use mtrr::MtrrLib;
@@ -145,7 +143,7 @@ cfg_if::cfg_if! {
             attribute: structs::MtrrMemoryCacheType,
         ) -> MtrrResult<()>;
         fn set_memory_attributes(&mut self, ranges: &[structs::MtrrMemoryRange]) -> MtrrResult<()>;
-        fn get_memory_ranges(&self) -> MtrrResult<Vec<structs::MtrrMemoryRange>>;
+        fn get_memory_ranges(&self) -> MtrrResult<structs::MtrrMemoryRanges>;
 
         fn debug_print_all_mtrrs(&self);
     }

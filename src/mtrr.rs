@@ -21,16 +21,17 @@ use crate::{
         MSR_IA32_MTRRCAP, MSR_IA32_TME_ACTIVATE, MTRR_LIB_FIXED_MTRR_TABLE, MTRR_NUMBER_OF_FIXED_MTRR,
         MTRR_NUMBER_OF_LOCAL_MTRR_RANGES, MTRR_NUMBER_OF_VARIABLE_MTRR, MTRR_NUMBER_OF_WORKING_MTRR_RANGES,
         MsrIa32MtrrDefType, MsrIa32TmeActivateRegister, MtrrContext, MtrrFixedSettings, MtrrLibAddress,
-        MtrrMemoryCacheType, MtrrMemoryRange, MtrrSettings, MtrrVariableSetting, MtrrVariableSettings, OR_SEED,
+        MtrrMemoryCacheType, MtrrMemoryRange, MtrrMemoryRanges, MtrrSettings, MtrrVariableSetting, MtrrVariableSettings, OR_SEED,
         SCRATCH_BUFFER_SIZE, SIZE_1MB,
     },
     utils::{get_power_of_two_64, high_bit_set_64, is_pow2, lshift_u64, mult_u64x32, rshift_u64},
 };
-use alloc::vec::Vec;
 use core::{mem::size_of, ptr::write_bytes};
 
 #[cfg(test)]
 use crate::structs::VariableMtrr;
+#[cfg(test)]
+use std::vec::Vec;
 
 fn m(start: u16, index: u16, vertex_count: u16) -> usize {
     (start as usize) * vertex_count as usize + (index as usize)
@@ -1987,7 +1988,7 @@ impl<H: Hal> MtrrLib<H> {
 
     ///  This function returns a Ranges array containing the memory cache types
     ///  of all memory addresses.
-    pub fn get_memory_ranges_impl(&self) -> MtrrResult<Vec<MtrrMemoryRange>> {
+    pub fn get_memory_ranges_impl(&self) -> MtrrResult<MtrrMemoryRanges> {
         let mut raw_variable_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_VARIABLE_MTRR] = Default::default();
         let mut all_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_LOCAL_MTRR_RANGES] =
             [MtrrMemoryRange::default(); MTRR_NUMBER_OF_LOCAL_MTRR_RANGES];
@@ -2037,7 +2038,7 @@ impl<H: Hal> MtrrLib<H> {
             }
         }
 
-        Ok(all_ranges[..all_range_count].to_vec())
+        Ok(MtrrMemoryRanges::new(all_ranges, all_range_count))
     }
 
     ///  This function prints all MTRRs for debugging.
@@ -2210,7 +2211,7 @@ impl<H: Hal> Mtrr for MtrrLib<H> {
         self.is_supported_impl()
     }
 
-    fn get_memory_ranges(&self) -> MtrrResult<Vec<MtrrMemoryRange>> {
+    fn get_memory_ranges(&self) -> MtrrResult<MtrrMemoryRanges> {
         self.get_memory_ranges_impl()
     }
 
