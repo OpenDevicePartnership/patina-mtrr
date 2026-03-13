@@ -155,7 +155,7 @@ impl MtrrMemoryRange {
 /// A fixed-capacity collection of MTRR memory ranges.
 ///
 /// This avoids heap allocation by using a stack-allocated fixed-size array
-/// sized to `MTRR_NUMBER_OF_LOCAL_MTRR_RANGES`. It implements [`Deref`] to
+/// sized to `MTRR_NUMBER_OF_LOCAL_MTRR_RANGES`. It implements [`Deref`](core::ops::Deref) to
 /// `[MtrrMemoryRange]` so it can be used transparently wherever a slice is
 /// expected, and [`IntoIterator`] for convenient iteration.
 pub struct MtrrMemoryRanges {
