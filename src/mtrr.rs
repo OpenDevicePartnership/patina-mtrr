@@ -43,8 +43,9 @@ fn o(start: u16, index: u16, vertex_count: u16) -> usize {
 
 /// An iterator over MTRR memory ranges backed by a fixed-size stack-allocated array.
 ///
-/// This avoids heap allocation by storing the ranges inline. Created by
-/// [`MtrrLib::get_memory_ranges_impl`].
+/// This avoids heap allocation by storing the ranges inline and allow the caller to
+/// invoke the [`MtrrLib::get_memory_ranges_impl`] method without the global allocator
+/// being ready.
 pub struct MtrrRangeIter {
     ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_LOCAL_MTRR_RANGES],
     index: usize,
