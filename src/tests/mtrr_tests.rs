@@ -676,8 +676,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_setti
 
         let returned_memory_ranges = mtrrlib.get_memory_ranges();
         assert!(returned_memory_ranges.is_ok());
-        let returned_memory_ranges: Vec<MtrrMemoryRange> =
-            returned_memory_ranges.unwrap().into_iter().collect();
+        let returned_memory_ranges: Vec<MtrrMemoryRange> = returned_memory_ranges.unwrap().into_iter().collect();
         println!("--- Returned Memory Ranges [{}] ---", returned_memory_ranges.len());
         dump_memory_ranges(&returned_memory_ranges, returned_memory_ranges.len());
         verify_memory_ranges(
@@ -797,8 +796,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr
 
         let returned_memory_ranges = mtrrlib.get_memory_ranges();
         assert!(returned_memory_ranges.is_ok());
-        let returned_memory_ranges: Vec<MtrrMemoryRange> =
-            returned_memory_ranges.unwrap().into_iter().collect();
+        let returned_memory_ranges: Vec<MtrrMemoryRange> = returned_memory_ranges.unwrap().into_iter().collect();
         println!("--- Returned Memory Ranges [{}] ---", returned_memory_ranges.len());
         dump_memory_ranges(&returned_memory_ranges, returned_memory_ranges.len());
         verify_memory_ranges(
