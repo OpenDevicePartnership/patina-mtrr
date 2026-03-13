@@ -30,8 +30,6 @@ use core::{mem::size_of, ptr::write_bytes};
 
 #[cfg(test)]
 use crate::structs::VariableMtrr;
-#[cfg(test)]
-use std::vec::Vec;
 
 fn m(start: u16, index: u16, vertex_count: u16) -> usize {
     (start as usize) * vertex_count as usize + (index as usize)
@@ -2178,8 +2176,8 @@ impl<H: Hal> MtrrLib<H> {
         &self,
         mtrr_valid_bits_mask: u64,
         mtrr_valid_address_mask: u64,
-    ) -> Vec<VariableMtrr> {
-        let mut variable_mtrr_ranges: Vec<VariableMtrr> = Vec::new();
+    ) -> std::vec::Vec<VariableMtrr> {
+        let mut variable_mtrr_ranges: std::vec::Vec<VariableMtrr> = std::vec::Vec::new();
 
         // Check if MTRR is supported
         if !self.is_supported_impl() {
