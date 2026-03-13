@@ -39,7 +39,7 @@
 //!
 //!     pub fn get_memory_ranges(
 //!         &self
-//!     ) -> MtrrResult<MtrrMemoryRanges>;
+//!     ) -> MtrrResult<impl IntoIterator<Item = MtrrMemoryRange>>;
 //!
 //!     pub fn debug_print_all_mtrrs(&self);
 //! }
@@ -143,7 +143,7 @@ cfg_if::cfg_if! {
             attribute: structs::MtrrMemoryCacheType,
         ) -> MtrrResult<()>;
         fn set_memory_attributes(&mut self, ranges: &[structs::MtrrMemoryRange]) -> MtrrResult<()>;
-        fn get_memory_ranges(&self) -> MtrrResult<structs::MtrrMemoryRanges>;
+        fn get_memory_ranges(&self) -> MtrrResult<impl IntoIterator<Item = structs::MtrrMemoryRange>>;
 
         fn debug_print_all_mtrrs(&self);
     }
