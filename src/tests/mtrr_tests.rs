@@ -853,10 +853,7 @@ fn unit_test_mtrr_lib_usage() {
 fn unit_test_mtrr_memory_ranges_empty() {
     use crate::structs::{MTRR_NUMBER_OF_LOCAL_MTRR_RANGES, MtrrMemoryRanges};
 
-    let ranges = MtrrMemoryRanges::new(
-        [MtrrMemoryRange::default(); MTRR_NUMBER_OF_LOCAL_MTRR_RANGES],
-        0,
-    );
+    let ranges = MtrrMemoryRanges::new([MtrrMemoryRange::default(); MTRR_NUMBER_OF_LOCAL_MTRR_RANGES], 0);
 
     assert!(ranges.is_empty(), "Ranges with count 0 should be empty");
     assert_eq!(ranges.len(), 0, "Length should be 0");
