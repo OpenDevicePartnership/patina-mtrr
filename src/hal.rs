@@ -212,11 +212,27 @@ impl Hal for X64Hal {
     }
 
     fn asm_cpuid(&self, function: u32) -> CpuidResult {
-        __cpuid(function)
+        // SAFETY: The `cpuid` instruction is guaranteed to be supported on all x86_64 processors.
+        //
+        // `#[allow(unused_unsafe)]` is used here to simultaneously support Rust <= 1.93 toolchains
+        // that consider __cpuid unsafe and Rust >= 1.94 (or >= nightly-2025-12-27) toolchains that
+        // consider __cpuid safe.
+        #[allow(unused_unsafe)]
+        unsafe {
+            __cpuid(function)
+        }
     }
 
     fn asm_cpuid_ex(&self, function: u32, sub_function: u32) -> CpuidResult {
-        __cpuid_count(function, sub_function)
+        // SAFETY: The `cpuid` instruction is guaranteed to be supported on all x86_64 processors.
+        //
+        // `#[allow(unused_unsafe)]` is used here to simultaneously support Rust <= 1.93 toolchains
+        // that consider __cpuid_count unsafe and Rust >= 1.94 (or >= nightly-2025-12-27) toolchains
+        // that consider __cpuid_count safe.
+        #[allow(unused_unsafe)]
+        unsafe {
+            __cpuid_count(function, sub_function)
+        }
     }
 }
 
