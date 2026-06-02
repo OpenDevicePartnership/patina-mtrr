@@ -17,3 +17,5 @@ rand = "0.10"
 [features]
 std = []
 doc = []
+# All no_std features to test in CI
+ci_features = []
