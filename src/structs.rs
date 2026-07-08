@@ -104,7 +104,7 @@ pub enum MtrrMemoryCacheType {
     Invalid = 7,
 }
 
-#[coverage(off)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 impl core::fmt::Display for MtrrMemoryCacheType {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let type_str = match self {
