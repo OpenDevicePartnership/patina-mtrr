@@ -62,7 +62,7 @@ impl Default for X64Hal {
     }
 }
 
-#[coverage(off)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(target_arch = "x86_64")]
 impl Hal for X64Hal {
     fn save_and_disable_interrupts(&mut self) -> bool {
@@ -236,7 +236,7 @@ impl Hal for X64Hal {
     }
 }
 
-#[coverage(off)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(not(target_arch = "x86_64"))]
 impl Hal for X64Hal {
     fn save_and_disable_interrupts(&mut self) -> bool {
