@@ -59,3 +59,4 @@ words:
   - wbinvd
   - wrmsr
   - wrpkru
+  - zbuild
