@@ -117,7 +117,7 @@
 //!```
 
 #![cfg_attr(all(not(feature = "std"), not(test)), no_std)]
-#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+#![cfg_attr(coverage, feature(coverage_attribute))]
 
 cfg_if::cfg_if! {
     if #[cfg(not(all(target_os = "uefi", target_arch = "aarch64")))] {
@@ -156,7 +156,7 @@ cfg_if::cfg_if! {
     }
 
     #[cfg(test)]
-    #[cfg_attr(coverage_nightly, coverage(off))]
+    #[cfg_attr(coverage, coverage(off))]
     mod tests;
     }
 }
