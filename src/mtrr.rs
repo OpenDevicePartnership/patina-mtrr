@@ -1786,7 +1786,7 @@ impl<H: Hal> MtrrLib<H> {
                 //      Buffer Too Small may be returned if the scratch buffer size is insufficient.
                 self.mtrr_lib_set_memory_ranges(
                     default_type,
-                    1 << high_bit_set_64(mtrr_valid_bits_mask),
+                    1 << high_bit_set_64(mtrr_valid_bits_mask + 1),
                     &mut working_ranges,
                     working_range_count,
                     scratch,
