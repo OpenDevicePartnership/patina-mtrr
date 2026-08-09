@@ -597,11 +597,21 @@ impl<H: Hal> MtrrLib<H> {
             return Err(MtrrError::OutOfResources);
         }
 
-        // Reserve space for the new ranges
-        for i in (0..(*working_ranges_count - end_index - 1)).rev() {
-            let src = i + end_index + 1;
-            let dest = (i as i64 + end_index as i64 + 1 - delta_count) as usize;
-            working_ranges[dest] = working_ranges[src];
+        // Reserve space for the new ranges. When delta_count > 0 the tail shifts left (dest < src)
+        // and must be copied ascending; reverse iteration would overwrite src elements before they're read.
+        let shift_len = *working_ranges_count - end_index - 1;
+        if delta_count > 0 {
+            for i in 0..shift_len {
+                let src = i + end_index + 1;
+                let dest = (i as i64 + end_index as i64 + 1 - delta_count) as usize;
+                working_ranges[dest] = working_ranges[src];
+            }
+        } else {
+            for i in (0..shift_len).rev() {
+                let src = i + end_index + 1;
+                let dest = (i as i64 + end_index as i64 + 1 - delta_count) as usize;
+                working_ranges[dest] = working_ranges[src];
+            }
         }
 
         *working_ranges_count = (*working_ranges_count as i64 - delta_count) as usize;
