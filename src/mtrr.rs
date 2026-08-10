@@ -2252,3 +2252,64 @@ impl<H: Hal> Mtrr for MtrrLib<H> {
         self.debug_print_all_mtrrs_impl()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Regression test for `mtrr_lib_set_memory_type`'s "reserve space" tail shift. When a merge/
+    // replace shrinks the working_ranges array (delta_count > 0) and the shifted tail overlaps its
+    // destination, the old reverse-iteration copy read-after-overwrote entries, duplicating one
+    // range across multiple slots and losing others - producing non-monotonic base addresses that
+    // tripped the vertex-order-violation panic in mtrr_lib_calculate_mtrrs. copy_within (memmove
+    // semantics) must shift the tail intact instead.
+    #[test]
+    fn set_memory_type_shrink_does_not_corrupt_overlapping_tail() {
+        let mtrr_lib = MtrrLib::new(X64Hal::new(), 0);
+
+        let mut working_ranges = [MtrrMemoryRange::default(); 8];
+        working_ranges[0] = MtrrMemoryRange::new(0x0000, 0x1000, MtrrMemoryCacheType::Uncacheable);
+        working_ranges[1] = MtrrMemoryRange::new(0x1000, 0x1000, MtrrMemoryCacheType::WriteBack);
+        working_ranges[2] = MtrrMemoryRange::new(0x2000, 0x1000, MtrrMemoryCacheType::WriteThrough);
+        working_ranges[3] = MtrrMemoryRange::new(0x3000, 0x1000, MtrrMemoryCacheType::Uncacheable);
+        working_ranges[4] = MtrrMemoryRange::new(0x4000, 0x1000, MtrrMemoryCacheType::WriteThrough);
+        working_ranges[5] = MtrrMemoryRange::new(0x5000, 0x1000, MtrrMemoryCacheType::Uncacheable);
+        let mut working_ranges_count = 6usize;
+        let capacity = working_ranges.len();
+
+        // Replace the two adjacent ranges at [0x1000, 0x3000) with one WriteProtected range: this
+        // merges 2 entries into 1 (delta_count == 1) while 3 entries remain after end_index, so the
+        // tail shift's source [3..6) and destination [2..5) overlap.
+        let result = mtrr_lib.mtrr_lib_set_memory_type(
+            &mut working_ranges,
+            capacity,
+            &mut working_ranges_count,
+            0x1000,
+            0x2000,
+            MtrrMemoryCacheType::WriteProtected,
+        );
+        assert!(result.is_ok());
+        assert_eq!(working_ranges_count, 5);
+
+        let expected = [
+            (0x0000, 0x1000, MtrrMemoryCacheType::Uncacheable),
+            (0x1000, 0x2000, MtrrMemoryCacheType::WriteProtected),
+            (0x3000, 0x1000, MtrrMemoryCacheType::Uncacheable),
+            (0x4000, 0x1000, MtrrMemoryCacheType::WriteThrough),
+            (0x5000, 0x1000, MtrrMemoryCacheType::Uncacheable),
+        ];
+        for (index, (base, length, mem_type)) in expected.into_iter().enumerate() {
+            let range = working_ranges[index];
+            assert_eq!(range.base_address, base, "range[{index}].base_address");
+            assert_eq!(range.length, length, "range[{index}].length");
+            assert_eq!(range.mem_type, mem_type, "range[{index}].mem_type");
+        }
+
+        // Under the old buggy shift, indices 2-4 all ended up as duplicates of the old index-5
+        // entry (base 0x5000), which is exactly the non-monotonic-base-address corruption that
+        // caused the vertex-order-violation panic.
+        for pair in working_ranges[..working_ranges_count].windows(2) {
+            assert_eq!(pair[1].base_address, pair[0].base_address + pair[0].length);
+        }
+    }
+}
