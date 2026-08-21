@@ -154,6 +154,7 @@ cfg_if::cfg_if! {
 
         /// MTRR library constructor.
         /// This function creates a new MTRR instance.
+        #[cfg_attr(coverage, coverage(off))]
         pub fn create_mtrr_lib(pcd_cpu_number_of_reserved_variable_mtrrs: u32) -> MtrrLib {
             let hal = X64Hal::new();
             MtrrLib::new(hal, pcd_cpu_number_of_reserved_variable_mtrrs)
