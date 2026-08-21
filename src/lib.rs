@@ -120,43 +120,43 @@
 #![cfg_attr(coverage, feature(coverage_attribute))]
 
 cfg_if::cfg_if! {
-    if #[cfg(not(all(target_os = "uefi", target_arch = "aarch64")))] {
-    use error::MtrrResult;
-    use hal::X64Hal;
-    use mtrr::MtrrLib;
-    pub mod error;
-    pub mod mtrr;
-    pub mod structs;
-    mod utils;
+    if #[cfg(target_arch = "x86_64")] {
+        use error::MtrrResult;
+        use hal::X64Hal;
+        use mtrr::MtrrLib;
+        pub mod error;
+        pub mod mtrr;
+        pub mod structs;
+        mod utils;
 
-    mod hal;
+        mod hal;
 
-    pub trait Mtrr {
-        fn is_supported(&self) -> bool;
-        fn get_all_mtrrs(&self) -> MtrrResult<structs::MtrrSettings>;
-        fn set_all_mtrrs(&mut self, mtrr_setting: &structs::MtrrSettings);
-        fn get_memory_attribute(&self, address: u64) -> structs::MtrrMemoryCacheType;
-        fn set_memory_attribute(
-            &mut self,
-            base_address: u64,
-            length: u64,
-            attribute: structs::MtrrMemoryCacheType,
-        ) -> MtrrResult<()>;
-        fn set_memory_attributes(&mut self, ranges: &[structs::MtrrMemoryRange]) -> MtrrResult<()>;
-        fn get_memory_ranges(&self) -> MtrrResult<impl IntoIterator<Item = structs::MtrrMemoryRange>>;
+        pub trait Mtrr {
+            fn is_supported(&self) -> bool;
+            fn get_all_mtrrs(&self) -> MtrrResult<structs::MtrrSettings>;
+            fn set_all_mtrrs(&mut self, mtrr_setting: &structs::MtrrSettings);
+            fn get_memory_attribute(&self, address: u64) -> structs::MtrrMemoryCacheType;
+            fn set_memory_attribute(
+                &mut self,
+                base_address: u64,
+                length: u64,
+                attribute: structs::MtrrMemoryCacheType,
+            ) -> MtrrResult<()>;
+            fn set_memory_attributes(&mut self, ranges: &[structs::MtrrMemoryRange]) -> MtrrResult<()>;
+            fn get_memory_ranges(&self) -> MtrrResult<impl IntoIterator<Item = structs::MtrrMemoryRange>>;
 
-        fn debug_print_all_mtrrs(&self);
-    }
+            fn debug_print_all_mtrrs(&self);
+        }
 
-    /// MTRR library constructor.
-    /// This function creates a new MTRR instance.
-    pub fn create_mtrr_lib(pcd_cpu_number_of_reserved_variable_mtrrs: u32) -> MtrrLib {
-        let hal = X64Hal::new();
-        MtrrLib::new(hal, pcd_cpu_number_of_reserved_variable_mtrrs)
-    }
+        /// MTRR library constructor.
+        /// This function creates a new MTRR instance.
+        pub fn create_mtrr_lib(pcd_cpu_number_of_reserved_variable_mtrrs: u32) -> MtrrLib {
+            let hal = X64Hal::new();
+            MtrrLib::new(hal, pcd_cpu_number_of_reserved_variable_mtrrs)
+        }
 
-    #[cfg(test)]
-    #[cfg_attr(coverage, coverage(off))]
-    mod tests;
+        #[cfg(test)]
+        #[cfg_attr(coverage, coverage(off))]
+        mod tests;
     }
 }
