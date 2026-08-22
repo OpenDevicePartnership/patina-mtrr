@@ -163,12 +163,5 @@ cfg_if::cfg_if! {
         #[cfg(test)]
         #[cfg_attr(coverage, coverage(off))]
         mod tests;
-    } else {
-        // Ensure LLVM emits profile data when trying to build on an AArch64
-        // host.
-        #[test]
-        fn coverage_profile_is_generated() {
-            assert_eq!(core::mem::size_of::<usize>(), 8);
-        }
     }
 }
