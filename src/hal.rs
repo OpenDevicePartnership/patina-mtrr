@@ -11,7 +11,7 @@
 use core::arch::asm;
 #[cfg(target_arch = "x86_64")]
 pub use core::arch::x86_64::CpuidResult;
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_os = "uefi", target_arch = "x86_64"))]
 use core::arch::x86_64::{__cpuid, __cpuid_count};
 
 // For testing when cross compiling on non-x64 architectures, re-define CpuidResult
@@ -63,7 +63,7 @@ impl Default for X64Hal {
 }
 
 #[cfg_attr(coverage, coverage(off))]
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_os = "uefi", target_arch = "x86_64"))]
 impl Hal for X64Hal {
     fn save_and_disable_interrupts(&mut self) -> bool {
         let interrupt_state = self.get_interrupt_state();
@@ -236,8 +236,9 @@ impl Hal for X64Hal {
     }
 }
 
+// No implementation exist for non-UEFI targets.
 #[cfg_attr(coverage, coverage(off))]
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(not(all(target_os = "uefi")))]
 impl Hal for X64Hal {
     fn save_and_disable_interrupts(&mut self) -> bool {
         unimplemented!()
