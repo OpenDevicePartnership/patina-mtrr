@@ -138,28 +138,11 @@ clear = true
 command = "cargo"
 args = ["build", "--target", "x86_64-unknown-uefi", "@@split(BUILD_FLAGS, )", "@@split(UEFI_CRATES, )"]
 
-[tasks.build-aarch64]
-description = """Builds patina_mtrr crate as UEFI target.
-
-Example:
-    `cargo make build-aarch64`
-    `cargo make -p release build-aarch64`
-"""
-clear = true
-command = "cargo"
-args = ["build", "--target", "aarch64-unknown-uefi", "@@split(BUILD_FLAGS, )", "@@split(UEFI_CRATES, )"]
-
 [tasks.check_code_x64]
 description = "Checks rust code for x64 build errors with results."
 private = true
 command = "cargo"
 args = ["check", "--target", "x86_64-unknown-uefi", "--features", "ci_features", "@@split(CARGO_MAKE_TASK_ARGS, )", "@@split(NO_STD_FLAGS, )",]
-
-[tasks.check_code_aarch64]
-description = "Checks rust code for aarch64 build errors with results."
-private = true
-command = "cargo"
-args = ["check", "--target", "aarch64-unknown-uefi", "--features", "ci_features", "@@split(CARGO_MAKE_TASK_ARGS, )", "@@split(NO_STD_FLAGS, )",]
 
 [tasks.check_tests]
 description = "Checks rust test code for build errors with results."
@@ -170,7 +153,7 @@ args = ["test", "--no-run", "--all-targets", "--all-features", "@@split(CARGO_MA
 [tasks.check]
 description = "Checks rust code for errors. Example `cargo make check`"
 clear = true
-run_task = [{ name = ["check_code_x64", "check_code_aarch64", "check_tests"], parallel = true }]
+run_task = [{ name = ["check_code_x64", "check_tests"], parallel = true }]
 
 [tasks.check-no-default-features-code]
 description = "Checks rust code compiles without default features."
@@ -289,19 +272,13 @@ exec --fail-on-error cargo test --target ${target} --workspace --features std
 [tasks.clippy]
 description = "Run cargo clippy for the host target and both UEFI cross-compilation targets."
 clear = true
-run_task = [{ name = ["clippy-x64", "clippy-aarch64", "clippy-std"], parallel = true }]
+run_task = [{ name = ["clippy-x64", "clippy-std"], parallel = true }]
 
 [tasks.clippy-x64]
 description = "Run cargo clippy for x86_64-unknown-uefi."
 private = true
 command = "cargo"
 args = ["clippy", "--target", "x86_64-unknown-uefi", "--features", "ci_features", "@@split(NO_STD_FLAGS, )", "--", "-D", "warnings"]
-
-[tasks.clippy-aarch64]
-description = "Run cargo clippy for aarch64-unknown-uefi."
-private = true
-command = "cargo"
-args = ["clippy", "--target", "aarch64-unknown-uefi", "--features", "ci_features", "@@split(NO_STD_FLAGS, )", "--", "-D", "warnings"]
 
 [tasks.clippy-std]
 description = "Run cargo clippy for std."
@@ -360,7 +337,6 @@ dependencies = [
     "check-no-default-features",
     "build",
     "build-x64",
-    "build-aarch64",
     "coverage",
     "doc-test",
     "doc",
