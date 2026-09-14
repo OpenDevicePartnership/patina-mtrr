@@ -136,6 +136,7 @@ cfg_if::cfg_if! {
 
         mod hal;
 
+        #[cfg_attr(feature = "mockall", mockall::automock)]
         pub trait Mtrr {
             fn is_supported(&self) -> bool;
             fn get_all_mtrrs(&self) -> MtrrResult<structs::MtrrSettings>;
