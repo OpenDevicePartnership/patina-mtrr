@@ -44,10 +44,27 @@ fn o(start: u16, index: u16, vertex_count: u16) -> usize {
 /// This avoids heap allocation by storing the ranges inline and allow the caller to
 /// invoke the [`MtrrLib::get_memory_ranges_impl`] method without the global allocator
 /// being ready.
-struct MtrrRangeIter {
+pub struct MtrrRangeIter {
     ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_LOCAL_MTRR_RANGES],
     index: usize,
     count: usize,
+}
+
+impl MtrrRangeIter {
+    /// Creates an iterator by copying the supplied memory ranges into fixed-size storage.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MtrrError::BufferTooSmall`] if more ranges are supplied than the iterator can store.
+    pub fn try_from_ranges(ranges: &[MtrrMemoryRange]) -> MtrrResult<Self> {
+        if ranges.len() > MTRR_NUMBER_OF_LOCAL_MTRR_RANGES {
+            return Err(MtrrError::BufferTooSmall);
+        }
+
+        let mut storage = [MtrrMemoryRange::default(); MTRR_NUMBER_OF_LOCAL_MTRR_RANGES];
+        storage[..ranges.len()].copy_from_slice(ranges);
+        Ok(Self { ranges: storage, index: 0, count: ranges.len() })
+    }
 }
 
 impl Iterator for MtrrRangeIter {
@@ -2016,7 +2033,7 @@ impl<H: Hal> MtrrLib<H> {
 
     ///  This function returns a Ranges array containing the memory cache types
     ///  of all memory addresses.
-    pub fn get_memory_ranges_impl(&self) -> MtrrResult<impl IntoIterator<Item = MtrrMemoryRange>> {
+    pub fn get_memory_ranges_impl(&self) -> MtrrResult<MtrrRangeIter> {
         let mut raw_variable_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_VARIABLE_MTRR] = Default::default();
         let mut all_ranges: [MtrrMemoryRange; MTRR_NUMBER_OF_LOCAL_MTRR_RANGES] =
             [MtrrMemoryRange::default(); MTRR_NUMBER_OF_LOCAL_MTRR_RANGES];
@@ -2239,7 +2256,7 @@ impl<H: Hal> Mtrr for MtrrLib<H> {
         self.is_supported_impl()
     }
 
-    fn get_memory_ranges(&self) -> MtrrResult<impl IntoIterator<Item = MtrrMemoryRange>> {
+    fn get_memory_ranges(&self) -> MtrrResult<MtrrRangeIter> {
         self.get_memory_ranges_impl()
     }
 

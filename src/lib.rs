@@ -39,7 +39,7 @@
 //!
 //!     pub fn get_memory_ranges(
 //!         &self
-//!     ) -> MtrrResult<impl IntoIterator<Item = MtrrMemoryRange>>;
+//!     ) -> MtrrResult<MtrrRangeIter>;
 //!
 //!     pub fn debug_print_all_mtrrs(&self);
 //! }
@@ -128,6 +128,7 @@ cfg_if::cfg_if! {
         use error::MtrrResult;
         use hal::X64Hal;
         use mtrr::MtrrLib;
+        pub use mtrr::MtrrRangeIter;
         pub mod error;
         pub mod mtrr;
         pub mod structs;
@@ -147,7 +148,7 @@ cfg_if::cfg_if! {
                 attribute: structs::MtrrMemoryCacheType,
             ) -> MtrrResult<()>;
             fn set_memory_attributes(&mut self, ranges: &[structs::MtrrMemoryRange]) -> MtrrResult<()>;
-            fn get_memory_ranges(&self) -> MtrrResult<impl IntoIterator<Item = structs::MtrrMemoryRange>>;
+            fn get_memory_ranges(&self) -> MtrrResult<MtrrRangeIter>;
 
             fn debug_print_all_mtrrs(&self);
         }

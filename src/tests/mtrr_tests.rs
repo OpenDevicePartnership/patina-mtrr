@@ -25,6 +25,7 @@ use crate::{
 use std::panic;
 
 use crate::{Mtrr, tests::config::SYSTEM_PARAMETERS};
+use crate::{MtrrRangeIter, error::MtrrError, structs::MTRR_NUMBER_OF_LOCAL_MTRR_RANGES};
 
 //
 //  Compare the actual memory ranges against expected memory ranges and return PASS when they match.
@@ -676,7 +677,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_mtrr_setti
 
         let returned_memory_ranges = mtrrlib.get_memory_ranges();
         assert!(returned_memory_ranges.is_ok());
-        let returned_memory_ranges: Vec<MtrrMemoryRange> = returned_memory_ranges.unwrap().into_iter().collect();
+        let returned_memory_ranges: Vec<MtrrMemoryRange> = returned_memory_ranges.unwrap().collect();
         println!("--- Returned Memory Ranges [{}] ---", returned_memory_ranges.len());
         dump_memory_ranges(&returned_memory_ranges, returned_memory_ranges.len());
         verify_memory_ranges(
@@ -796,7 +797,7 @@ fn unit_test_mtrr_set_memory_attribute_and_get_memory_attributes_with_empty_mtrr
 
         let returned_memory_ranges = mtrrlib.get_memory_ranges();
         assert!(returned_memory_ranges.is_ok());
-        let returned_memory_ranges: Vec<MtrrMemoryRange> = returned_memory_ranges.unwrap().into_iter().collect();
+        let returned_memory_ranges: Vec<MtrrMemoryRange> = returned_memory_ranges.unwrap().collect();
         println!("--- Returned Memory Ranges [{}] ---", returned_memory_ranges.len());
         dump_memory_ranges(&returned_memory_ranges, returned_memory_ranges.len());
         verify_memory_ranges(
@@ -871,7 +872,7 @@ fn unit_test_get_memory_ranges_returns_iterator() {
     assert!(status.is_ok());
 
     // Collect into Vec
-    let memory_ranges: Vec<MtrrMemoryRange> = mtrrlib.get_memory_ranges().unwrap().into_iter().collect();
+    let memory_ranges: Vec<MtrrMemoryRange> = mtrrlib.get_memory_ranges().unwrap().collect();
     assert!(!memory_ranges.is_empty(), "Should have at least one range");
     assert_eq!(memory_ranges[0].base_address, 0x0, "First range should start at 0");
 
@@ -887,7 +888,7 @@ fn unit_test_get_memory_ranges_returns_iterator() {
     assert_eq!(takes_slice(&memory_ranges), memory_ranges.len());
 
     // ExactSizeIterator: verify len() on the iterator
-    let iter = mtrrlib.get_memory_ranges().unwrap().into_iter();
+    let iter = mtrrlib.get_memory_ranges().unwrap();
     assert_eq!(iter.count(), memory_ranges.len(), "Iterator should yield the same number of elements");
 
     // Can use directly in for loop via IntoIterator
@@ -897,4 +898,31 @@ fn unit_test_get_memory_ranges_returns_iterator() {
         count += 1;
     }
     assert_eq!(count, memory_ranges.len());
+}
+
+#[test]
+fn unit_test_mtrr_range_iter_from_ranges() {
+    let ranges = [
+        MtrrMemoryRange::new(0, 0x1000, MtrrMemoryCacheType::WriteBack),
+        MtrrMemoryRange::new(0x1000, 0x2000, MtrrMemoryCacheType::Uncacheable),
+    ];
+    let mut iter = MtrrRangeIter::try_from_ranges(&ranges).unwrap();
+
+    assert_eq!(iter.len(), 2);
+    let first = iter.next().unwrap();
+    assert_eq!(first.base_address, ranges[0].base_address);
+    assert_eq!(first.length, ranges[0].length);
+    assert_eq!(first.mem_type, ranges[0].mem_type);
+    let second = iter.next().unwrap();
+    assert_eq!(second.base_address, ranges[1].base_address);
+    assert_eq!(second.length, ranges[1].length);
+    assert_eq!(second.mem_type, ranges[1].mem_type);
+    assert!(iter.next().is_none());
+}
+
+#[test]
+fn unit_test_mtrr_range_iter_rejects_too_many_ranges() {
+    let ranges = vec![MtrrMemoryRange::default(); MTRR_NUMBER_OF_LOCAL_MTRR_RANGES + 1];
+
+    assert_eq!(MtrrRangeIter::try_from_ranges(&ranges).err(), Some(MtrrError::BufferTooSmall));
 }
