@@ -133,7 +133,7 @@ cfg_if::cfg_if! {
         pub mod mtrr;
         pub mod structs;
         mod utils;
-
+        mod vendor;
         mod hal;
 
         #[cfg_attr(feature = "mockall", mockall::automock)]

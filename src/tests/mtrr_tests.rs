@@ -947,7 +947,7 @@ fn unit_test_amd_top_mem2_force_write_back() {
     assert_eq!(mtrrlib.get_memory_attribute(TOP_MEM2 - 1), MtrrMemoryCacheType::WriteBack);
     assert_eq!(mtrrlib.get_memory_attribute(TOP_MEM2), MtrrMemoryCacheType::Uncacheable);
 
-    let ranges: Vec<MtrrMemoryRange> = mtrrlib.get_memory_ranges().unwrap().into_iter().collect();
+    let ranges: Vec<MtrrMemoryRange> = mtrrlib.get_memory_ranges().unwrap().collect();
     assert_eq!(ranges.len(), 3);
     assert_eq!(ranges[0].base_address, 0);
     assert_eq!(ranges[0].length, BASE_4GB);
@@ -976,4 +976,41 @@ fn unit_test_amd_top_mem2_write_back_requires_both_syscfg_flags() {
 
         assert_eq!(mtrrlib.get_memory_attribute(BASE_4GB), MtrrMemoryCacheType::Uncacheable);
     }
+}
+
+#[test]
+fn unit_test_intel_has_no_mtrr_override() {
+    const BASE_4GB: u64 = 0x1_0000_0000;
+
+    let system_parameter = SystemParameterBuilder::new()
+        .with_fixed_mtrr_support(false)
+        .with_default_cache_type(MtrrMemoryCacheType::Uncacheable)
+        .build();
+    let mut hal = MockHal::new();
+    hal.initialize_mtrr_regs(&system_parameter);
+    hal.configure_intel_cpu();
+    let mtrrlib = create_mtrr_lib_with_mock_hal(hal, 0);
+
+    assert_eq!(mtrrlib.get_memory_attribute(BASE_4GB), MtrrMemoryCacheType::Uncacheable);
+}
+
+#[test]
+fn unit_test_cpu_vendor_is_detected_once() {
+    const BASE_4GB: u64 = 0x1_0000_0000;
+    const TOP_MEM2: u64 = 0x2_0000_0000;
+
+    let system_parameter = SystemParameterBuilder::new()
+        .with_fixed_mtrr_support(false)
+        .with_default_cache_type(MtrrMemoryCacheType::Uncacheable)
+        .build();
+    let mut hal = MockHal::new();
+    hal.initialize_mtrr_regs(&system_parameter);
+    hal.configure_amd_top_mem2(TOP_MEM2, true, true);
+    let mtrrlib = create_mtrr_lib_with_mock_hal(hal, 0);
+
+    assert_eq!(mtrrlib.get_memory_attribute(BASE_4GB), MtrrMemoryCacheType::WriteBack);
+    assert_eq!(mtrrlib.get_memory_attribute(BASE_4GB), MtrrMemoryCacheType::WriteBack);
+
+    let hal = mtrrlib.mtrr_drop_hal();
+    assert_eq!(hal.cpuid_signature_read_count(), 1);
 }

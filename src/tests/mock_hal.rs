@@ -9,20 +9,31 @@
 #![allow(unused_imports)]
 #![allow(clippy::needless_range_loop)]
 
+use core::cell::Cell;
+
 use crate::{
     hal::{CpuidResult, Hal},
     mtrr::MtrrLib,
     structs::{
-        AMD64_SYSCFG_MTRR_TOM2_EN, AMD64_SYSCFG_TOM2_FORCE_MEM_TYPE_WB, CPUID_EXTENDED_FUNCTION, CPUID_SIGNATURE,
-        CPUID_SIGNATURE_AUTHENTIC_AMD_EBX, CPUID_SIGNATURE_AUTHENTIC_AMD_ECX, CPUID_SIGNATURE_AUTHENTIC_AMD_EDX,
-        CPUID_VERSION_INFO, CPUID_VIR_PHY_ADDRESS_SIZE, CpuidStructuredExtendedFeatureFlagsEcx, CpuidVersionInfoEdx,
-        CpuidVirPhyAddressSizeEax, MSR_AMD64_SYSCFG, MSR_AMD64_TOP_MEM2, MSR_IA32_MTRR_DEF_TYPE,
+        CPUID_EXTENDED_FUNCTION, CPUID_SIGNATURE, CPUID_VERSION_INFO, CPUID_VIR_PHY_ADDRESS_SIZE,
+        CpuidStructuredExtendedFeatureFlagsEcx, CpuidVersionInfoEdx, CpuidVirPhyAddressSizeEax, MSR_IA32_MTRR_DEF_TYPE,
         MSR_IA32_MTRR_PHYSBASE0, MSR_IA32_MTRR_PHYSMASK0, MSR_IA32_MTRRCAP, MSR_IA32_TME_ACTIVATE,
         MTRR_NUMBER_OF_FIXED_MTRR, MTRR_NUMBER_OF_VARIABLE_MTRR, MsrIa32MtrrDefType, MsrIa32MtrrPhysbaseRegister,
         MsrIa32MtrrPhysmaskRegister, MsrIa32MtrrcapRegister, MsrIa32TmeActivateRegister, MtrrMemoryCacheType,
     },
     tests::config::{FIXED_MTRR_INDICES, MtrrLibSystemParameter},
 };
+
+const CPUID_SIGNATURE_AUTHENTIC_AMD_EBX: u32 = u32::from_le_bytes(*b"Auth");
+const CPUID_SIGNATURE_AUTHENTIC_AMD_ECX: u32 = u32::from_le_bytes(*b"cAMD");
+const CPUID_SIGNATURE_AUTHENTIC_AMD_EDX: u32 = u32::from_le_bytes(*b"enti");
+const CPUID_SIGNATURE_GENUINE_INTEL_EBX: u32 = u32::from_le_bytes(*b"Genu");
+const CPUID_SIGNATURE_GENUINE_INTEL_ECX: u32 = u32::from_le_bytes(*b"ntel");
+const CPUID_SIGNATURE_GENUINE_INTEL_EDX: u32 = u32::from_le_bytes(*b"ineI");
+const MSR_AMD64_SYSCFG: u32 = 0xC0010010;
+const MSR_AMD64_TOP_MEM2: u32 = 0xC001001D;
+const AMD64_SYSCFG_MTRR_TOM2_EN: u64 = 1 << 21;
+const AMD64_SYSCFG_TOM2_FORCE_MEM_TYPE_WB: u64 = 1 << 22;
 
 /// Mock HAL implementation for unit testing.
 ///
@@ -39,7 +50,10 @@ pub(crate) struct MockHal {
     cpuid_version_info_edx: CpuidVersionInfoEdx,
     cpuid_extended_feature_flags_ecx: CpuidStructuredExtendedFeatureFlagsEcx,
     cpuid_vir_phy_address_size_eax: CpuidVirPhyAddressSizeEax,
-    amd_cpu: bool,
+    cpuid_vendor_ebx: u32,
+    cpuid_vendor_ecx: u32,
+    cpuid_vendor_edx: u32,
+    cpuid_signature_read_count: Cell<u32>,
     amd64_syscfg_msr: u64,
     amd64_top_mem2_msr: u64,
 
@@ -62,7 +76,10 @@ impl MockHal {
             cpuid_version_info_edx: CpuidVersionInfoEdx::default(),
             cpuid_extended_feature_flags_ecx: CpuidStructuredExtendedFeatureFlagsEcx::default(),
             cpuid_vir_phy_address_size_eax: CpuidVirPhyAddressSizeEax::default(),
-            amd_cpu: false,
+            cpuid_vendor_ebx: 0,
+            cpuid_vendor_ecx: 0,
+            cpuid_vendor_edx: 0,
+            cpuid_signature_read_count: Cell::new(0),
             amd64_syscfg_msr: 0,
             amd64_top_mem2_msr: 0,
             interrupt_state: true,
@@ -122,7 +139,9 @@ impl MockHal {
     }
 
     pub(crate) fn configure_amd_top_mem2(&mut self, top_mem2: u64, enabled: bool, force_write_back: bool) {
-        self.amd_cpu = true;
+        self.cpuid_vendor_ebx = CPUID_SIGNATURE_AUTHENTIC_AMD_EBX;
+        self.cpuid_vendor_ecx = CPUID_SIGNATURE_AUTHENTIC_AMD_ECX;
+        self.cpuid_vendor_edx = CPUID_SIGNATURE_AUTHENTIC_AMD_EDX;
         self.amd64_syscfg_msr = 0;
         if enabled {
             self.amd64_syscfg_msr |= AMD64_SYSCFG_MTRR_TOM2_EN;
@@ -131,6 +150,16 @@ impl MockHal {
             self.amd64_syscfg_msr |= AMD64_SYSCFG_TOM2_FORCE_MEM_TYPE_WB;
         }
         self.amd64_top_mem2_msr = top_mem2;
+    }
+
+    pub(crate) fn configure_intel_cpu(&mut self) {
+        self.cpuid_vendor_ebx = CPUID_SIGNATURE_GENUINE_INTEL_EBX;
+        self.cpuid_vendor_ecx = CPUID_SIGNATURE_GENUINE_INTEL_ECX;
+        self.cpuid_vendor_edx = CPUID_SIGNATURE_GENUINE_INTEL_EDX;
+    }
+
+    pub(crate) fn cpuid_signature_read_count(&self) -> u32 {
+        self.cpuid_signature_read_count.get()
     }
 }
 
@@ -283,12 +312,11 @@ impl Hal for MockHal {
 
         match function {
             CPUID_SIGNATURE => {
+                self.cpuid_signature_read_count.set(self.cpuid_signature_read_count.get() + 1);
                 result.eax = CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS;
-                if self.amd_cpu {
-                    result.ebx = CPUID_SIGNATURE_AUTHENTIC_AMD_EBX;
-                    result.ecx = CPUID_SIGNATURE_AUTHENTIC_AMD_ECX;
-                    result.edx = CPUID_SIGNATURE_AUTHENTIC_AMD_EDX;
-                }
+                result.ebx = self.cpuid_vendor_ebx;
+                result.ecx = self.cpuid_vendor_ecx;
+                result.edx = self.cpuid_vendor_edx;
                 result
             }
             CPUID_VERSION_INFO => {
