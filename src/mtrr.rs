@@ -15,14 +15,17 @@ use crate::{
     error::{MtrrError, MtrrResult},
     hal::{Hal, X64Hal},
     structs::{
-        BIT7, BIT11, CLEAR_SEED, CPUID_EXTENDED_FUNCTION, CPUID_SIGNATURE, CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS,
+        AMD64_SYSCFG_MTRR_TOM2_EN, AMD64_SYSCFG_TOM2_FORCE_MEM_TYPE_WB, AMD64_TOP_MEM2_ADDRESS_MASK, BASE_4GB, BIT7,
+        BIT11, CLEAR_SEED, CPUID_EXTENDED_FUNCTION, CPUID_SIGNATURE, CPUID_SIGNATURE_AUTHENTIC_AMD_EBX,
+        CPUID_SIGNATURE_AUTHENTIC_AMD_ECX, CPUID_SIGNATURE_AUTHENTIC_AMD_EDX, CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS,
         CPUID_VERSION_INFO, CPUID_VIR_PHY_ADDRESS_SIZE, CpuidStructuredExtendedFeatureFlagsEcx,
-        CpuidVirPhyAddressSizeEax, MSR_IA32_MTRR_DEF_TYPE, MSR_IA32_MTRR_PHYSBASE0, MSR_IA32_MTRR_PHYSMASK0,
-        MSR_IA32_MTRRCAP, MSR_IA32_TME_ACTIVATE, MTRR_LIB_FIXED_MTRR_TABLE, MTRR_NUMBER_OF_FIXED_MTRR,
-        MTRR_NUMBER_OF_LOCAL_MTRR_RANGES, MTRR_NUMBER_OF_VARIABLE_MTRR, MTRR_NUMBER_OF_WORKING_MTRR_RANGES,
-        MsrIa32MtrrDefType, MsrIa32TmeActivateRegister, MtrrContext, MtrrFixedSettings, MtrrLibAddress,
-        MtrrMemoryCacheType, MtrrMemoryRange, MtrrSettings, MtrrVariableSetting, MtrrVariableSettings, OR_SEED,
-        SCRATCH_BUFFER_SIZE, SIZE_1MB,
+        CpuidVirPhyAddressSizeEax, MSR_AMD64_SYSCFG, MSR_AMD64_TOP_MEM2, MSR_IA32_MTRR_DEF_TYPE,
+        MSR_IA32_MTRR_PHYSBASE0, MSR_IA32_MTRR_PHYSMASK0, MSR_IA32_MTRRCAP, MSR_IA32_TME_ACTIVATE,
+        MTRR_LIB_FIXED_MTRR_TABLE, MTRR_NUMBER_OF_FIXED_MTRR, MTRR_NUMBER_OF_LOCAL_MTRR_RANGES,
+        MTRR_NUMBER_OF_VARIABLE_MTRR, MTRR_NUMBER_OF_WORKING_MTRR_RANGES, MsrIa32MtrrDefType,
+        MsrIa32TmeActivateRegister, MtrrContext, MtrrFixedSettings, MtrrLibAddress, MtrrMemoryCacheType,
+        MtrrMemoryRange, MtrrSettings, MtrrVariableSetting, MtrrVariableSettings, OR_SEED, SCRATCH_BUFFER_SIZE,
+        SIZE_1MB,
     },
     utils::{get_power_of_two_64, high_bit_set_64, is_pow2, lshift_u64, mult_u64x32, rshift_u64},
 };
@@ -149,6 +152,33 @@ impl<H: Hal> MtrrLib<H> {
         }
 
         ((self.hal.asm_read_msr64(MSR_IA32_MTRR_DEF_TYPE) & 0xFF) as u8).into()
+    }
+
+    /// Returns AMD's architectural write-back override for [4 GiB, TOP_MEM2), when enabled.
+    fn amd_tom2_write_back_range(&self, address_space_limit: u64) -> Option<MtrrMemoryRange> {
+        let vendor = self.hal.asm_cpuid(CPUID_SIGNATURE);
+        if vendor.ebx != CPUID_SIGNATURE_AUTHENTIC_AMD_EBX
+            || vendor.ecx != CPUID_SIGNATURE_AUTHENTIC_AMD_ECX
+            || vendor.edx != CPUID_SIGNATURE_AUTHENTIC_AMD_EDX
+        {
+            return None;
+        }
+
+        let syscfg = self.hal.asm_read_msr64(MSR_AMD64_SYSCFG);
+        let required_flags = AMD64_SYSCFG_MTRR_TOM2_EN | AMD64_SYSCFG_TOM2_FORCE_MEM_TYPE_WB;
+        if syscfg & required_flags != required_flags {
+            return None;
+        }
+
+        let top_mem2 = core::cmp::min(
+            self.hal.asm_read_msr64(MSR_AMD64_TOP_MEM2) & AMD64_TOP_MEM2_ADDRESS_MASK,
+            address_space_limit,
+        );
+        if top_mem2 <= BASE_4GB {
+            return None;
+        }
+
+        Some(MtrrMemoryRange::new(BASE_4GB, top_mem2 - BASE_4GB, MtrrMemoryCacheType::WriteBack))
     }
 
     //  Preparation before programming MTRR.
@@ -460,6 +490,13 @@ impl<H: Hal> MtrrLib<H> {
     //
     //  - `address` -            The specific address
     fn mtrr_get_memory_attribute_by_address_worker(&self, address: u64) -> MtrrMemoryCacheType {
+        if self
+            .amd_tom2_write_back_range(u64::MAX)
+            .is_some_and(|range| address >= range.base_address && address < range.base_address + range.length)
+        {
+            return MtrrMemoryCacheType::WriteBack;
+        }
+
         let def_type = MsrIa32MtrrDefType::from(self.hal.asm_read_msr64(MSR_IA32_MTRR_DEF_TYPE));
 
         if !def_type.e() {
@@ -2080,6 +2117,20 @@ impl<H: Hal> MtrrLib<H> {
                     MTRR_NUMBER_OF_LOCAL_MTRR_RANGES,
                     &mut all_range_count,
                 );
+            }
+        }
+
+        if let Some(range) = self.amd_tom2_write_back_range(mtrr_valid_bits_mask + 1) {
+            match self.mtrr_lib_set_memory_type(
+                &mut all_ranges,
+                MTRR_NUMBER_OF_LOCAL_MTRR_RANGES,
+                &mut all_range_count,
+                range.base_address,
+                range.length,
+                range.mem_type,
+            ) {
+                Ok(()) | Err(MtrrError::AlreadyStarted) => {}
+                Err(error) => return Err(error),
             }
         }
 

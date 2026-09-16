@@ -166,7 +166,7 @@ pub(crate) const MTRR_NUMBER_OF_VARIABLE_MTRR: usize = 32; // Adjust based on th
 pub(crate) const MTRR_NUMBER_OF_FIXED_MTRR: usize = 11;
 pub(crate) const MTRR_NUMBER_OF_WORKING_MTRR_RANGES: usize = 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 2;
 pub(crate) const MTRR_NUMBER_OF_LOCAL_MTRR_RANGES: usize =
-    8 * MTRR_NUMBER_OF_FIXED_MTRR + 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 1;
+    8 * MTRR_NUMBER_OF_FIXED_MTRR + 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 3;
 
 pub(crate) const SIZE_1MB: u32 = 0x000100000;
 pub(crate) const SIZE_64KB: u32 = 0x00010000;
@@ -258,6 +258,15 @@ pub(crate) const CPUID_SIGNATURE: u32 = 0;
 pub(crate) const CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS: u32 = 0x07;
 pub(crate) const CPUID_VERSION_INFO: u32 = 0x00000001;
 pub(crate) const CPUID_VIR_PHY_ADDRESS_SIZE: u32 = 0x80000008;
+pub(crate) const CPUID_SIGNATURE_AUTHENTIC_AMD_EBX: u32 = u32::from_le_bytes(*b"Auth");
+pub(crate) const CPUID_SIGNATURE_AUTHENTIC_AMD_ECX: u32 = u32::from_le_bytes(*b"cAMD");
+pub(crate) const CPUID_SIGNATURE_AUTHENTIC_AMD_EDX: u32 = u32::from_le_bytes(*b"enti");
+pub(crate) const MSR_AMD64_SYSCFG: u32 = 0xC0010010;
+pub(crate) const MSR_AMD64_TOP_MEM2: u32 = 0xC001001D;
+pub(crate) const AMD64_SYSCFG_MTRR_TOM2_EN: u64 = 1 << 21;
+pub(crate) const AMD64_SYSCFG_TOM2_FORCE_MEM_TYPE_WB: u64 = 1 << 22;
+pub(crate) const AMD64_TOP_MEM2_ADDRESS_MASK: u64 = 0x000F_FFFF_FF80_0000;
+pub(crate) const BASE_4GB: u64 = 0x1_0000_0000;
 pub(crate) const MSR_IA32_TME_ACTIVATE: u32 = 0x00000982;
 
 #[bitfield(u64)]
