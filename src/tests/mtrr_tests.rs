@@ -18,7 +18,7 @@ use crate::{
         MtrrLibSystemParameter,
         config::SystemParameterBuilder,
         fixtures::{MemoryTypeCounts, MtrrTestFixture, create_comprehensive_mtrr_test_setup},
-        mock_hal::create_mtrr_lib_with_mock_hal,
+        mock_hal::{MockHal, create_mtrr_lib_with_mock_hal},
         support::{DeterministicGenerator, MtrrPairGenerator, TestResultCollector, get_effective_memory_ranges},
     },
 };
@@ -925,4 +925,92 @@ fn unit_test_mtrr_range_iter_rejects_too_many_ranges() {
     let ranges = vec![MtrrMemoryRange::default(); MTRR_NUMBER_OF_LOCAL_MTRR_RANGES + 1];
 
     assert_eq!(MtrrRangeIter::try_from_ranges(&ranges).err(), Some(MtrrError::BufferTooSmall));
+}
+
+#[test]
+fn unit_test_amd_top_mem2_force_write_back() {
+    const BASE_4GB: u64 = 0x1_0000_0000;
+    const TOP_MEM2: u64 = 0x2_0000_0000;
+
+    let system_parameter = SystemParameterBuilder::new()
+        .with_physical_address_bits(48)
+        .with_fixed_mtrr_support(false)
+        .with_default_cache_type(MtrrMemoryCacheType::Uncacheable)
+        .build();
+    let mut hal = MockHal::new();
+    hal.initialize_mtrr_regs(&system_parameter);
+    hal.configure_amd_top_mem2(TOP_MEM2, true, true);
+    let mtrrlib = create_mtrr_lib_with_mock_hal(hal, 0);
+
+    assert_eq!(mtrrlib.get_memory_attribute(BASE_4GB - 1), MtrrMemoryCacheType::Uncacheable);
+    assert_eq!(mtrrlib.get_memory_attribute(BASE_4GB), MtrrMemoryCacheType::WriteBack);
+    assert_eq!(mtrrlib.get_memory_attribute(TOP_MEM2 - 1), MtrrMemoryCacheType::WriteBack);
+    assert_eq!(mtrrlib.get_memory_attribute(TOP_MEM2), MtrrMemoryCacheType::Uncacheable);
+
+    let ranges: Vec<MtrrMemoryRange> = mtrrlib.get_memory_ranges().unwrap().collect();
+    assert_eq!(ranges.len(), 3);
+    assert_eq!(ranges[0].base_address, 0);
+    assert_eq!(ranges[0].length, BASE_4GB);
+    assert_eq!(ranges[0].mem_type, MtrrMemoryCacheType::Uncacheable);
+    assert_eq!(ranges[1].base_address, BASE_4GB);
+    assert_eq!(ranges[1].length, TOP_MEM2 - BASE_4GB);
+    assert_eq!(ranges[1].mem_type, MtrrMemoryCacheType::WriteBack);
+    assert_eq!(ranges[2].base_address, TOP_MEM2);
+    assert_eq!(ranges[2].mem_type, MtrrMemoryCacheType::Uncacheable);
+}
+
+#[test]
+fn unit_test_amd_top_mem2_write_back_requires_both_syscfg_flags() {
+    const BASE_4GB: u64 = 0x1_0000_0000;
+    const TOP_MEM2: u64 = 0x2_0000_0000;
+
+    for (enabled, force_write_back) in [(false, true), (true, false)] {
+        let system_parameter = SystemParameterBuilder::new()
+            .with_fixed_mtrr_support(false)
+            .with_default_cache_type(MtrrMemoryCacheType::Uncacheable)
+            .build();
+        let mut hal = MockHal::new();
+        hal.initialize_mtrr_regs(&system_parameter);
+        hal.configure_amd_top_mem2(TOP_MEM2, enabled, force_write_back);
+        let mtrrlib = create_mtrr_lib_with_mock_hal(hal, 0);
+
+        assert_eq!(mtrrlib.get_memory_attribute(BASE_4GB), MtrrMemoryCacheType::Uncacheable);
+    }
+}
+
+#[test]
+fn unit_test_intel_has_no_mtrr_override() {
+    const BASE_4GB: u64 = 0x1_0000_0000;
+
+    let system_parameter = SystemParameterBuilder::new()
+        .with_fixed_mtrr_support(false)
+        .with_default_cache_type(MtrrMemoryCacheType::Uncacheable)
+        .build();
+    let mut hal = MockHal::new();
+    hal.initialize_mtrr_regs(&system_parameter);
+    hal.configure_intel_cpu();
+    let mtrrlib = create_mtrr_lib_with_mock_hal(hal, 0);
+
+    assert_eq!(mtrrlib.get_memory_attribute(BASE_4GB), MtrrMemoryCacheType::Uncacheable);
+}
+
+#[test]
+fn unit_test_cpu_vendor_is_detected_once() {
+    const BASE_4GB: u64 = 0x1_0000_0000;
+    const TOP_MEM2: u64 = 0x2_0000_0000;
+
+    let system_parameter = SystemParameterBuilder::new()
+        .with_fixed_mtrr_support(false)
+        .with_default_cache_type(MtrrMemoryCacheType::Uncacheable)
+        .build();
+    let mut hal = MockHal::new();
+    hal.initialize_mtrr_regs(&system_parameter);
+    hal.configure_amd_top_mem2(TOP_MEM2, true, true);
+    let mtrrlib = create_mtrr_lib_with_mock_hal(hal, 0);
+
+    assert_eq!(mtrrlib.get_memory_attribute(BASE_4GB), MtrrMemoryCacheType::WriteBack);
+    assert_eq!(mtrrlib.get_memory_attribute(BASE_4GB), MtrrMemoryCacheType::WriteBack);
+
+    let hal = mtrrlib.mtrr_drop_hal();
+    assert_eq!(hal.cpuid_signature_read_count(), 1);
 }

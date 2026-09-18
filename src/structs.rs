@@ -165,8 +165,9 @@ pub(crate) const MSR_IA32_MTRR_DEF_TYPE: u32 = 0x000002FF;
 pub(crate) const MTRR_NUMBER_OF_VARIABLE_MTRR: usize = 32; // Adjust based on the actual number
 pub(crate) const MTRR_NUMBER_OF_FIXED_MTRR: usize = 11;
 pub(crate) const MTRR_NUMBER_OF_WORKING_MTRR_RANGES: usize = 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 2;
+// Include the default range and capacity for one vendor override to split it twice.
 pub(crate) const MTRR_NUMBER_OF_LOCAL_MTRR_RANGES: usize =
-    8 * MTRR_NUMBER_OF_FIXED_MTRR + 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 1;
+    8 * MTRR_NUMBER_OF_FIXED_MTRR + 2 * MTRR_NUMBER_OF_VARIABLE_MTRR + 3;
 
 pub(crate) const SIZE_1MB: u32 = 0x000100000;
 pub(crate) const SIZE_64KB: u32 = 0x00010000;
