@@ -8,19 +8,12 @@
 //!
 use crate::{
     hal::{CpuidResult, Hal},
-    structs::{MtrrMemoryCacheType, MtrrMemoryRange},
+    structs::{
+        BASE_4GB, CPUID_SIGNATURE_AUTHENTIC_AMD_EBX, CPUID_SIGNATURE_AUTHENTIC_AMD_ECX,
+        CPUID_SIGNATURE_AUTHENTIC_AMD_EDX, MSR_AMD64_SYSCFG, MSR_AMD64_TOP_MEM2, MsrAmd64SysCfg, MsrAmd64TopMem2,
+        MtrrMemoryCacheType, MtrrMemoryRange,
+    },
 };
-
-const CPUID_SIGNATURE_AUTHENTIC_AMD_EBX: u32 = u32::from_le_bytes(*b"Auth");
-const CPUID_SIGNATURE_AUTHENTIC_AMD_ECX: u32 = u32::from_le_bytes(*b"cAMD");
-const CPUID_SIGNATURE_AUTHENTIC_AMD_EDX: u32 = u32::from_le_bytes(*b"enti");
-
-const MSR_AMD64_SYSCFG: u32 = 0xC0010010;
-const MSR_AMD64_TOP_MEM2: u32 = 0xC001001D;
-const AMD64_SYSCFG_MTRR_TOM2_EN: u64 = 1 << 21;
-const AMD64_SYSCFG_TOM2_FORCE_MEM_TYPE_WB: u64 = 1 << 22;
-const AMD64_TOP_MEM2_ADDRESS_MASK: u64 = 0x000F_FFFF_FF80_0000;
-const BASE_4GB: u64 = 0x1_0000_0000;
 
 pub(super) fn is_vendor(vendor: &CpuidResult) -> bool {
     vendor.ebx == CPUID_SIGNATURE_AUTHENTIC_AMD_EBX
@@ -30,13 +23,12 @@ pub(super) fn is_vendor(vendor: &CpuidResult) -> bool {
 
 /// Returns an MTRR override for the AMD Top Memory 2 region, if the appropriate system configuration flags are set.
 pub(super) fn top_mem2_override(hal: &dyn Hal) -> Option<MtrrMemoryRange> {
-    let syscfg = hal.asm_read_msr64(MSR_AMD64_SYSCFG);
-    let required_flags = AMD64_SYSCFG_MTRR_TOM2_EN | AMD64_SYSCFG_TOM2_FORCE_MEM_TYPE_WB;
-    if syscfg & required_flags != required_flags {
+    let syscfg = MsrAmd64SysCfg::from(hal.asm_read_msr64(MSR_AMD64_SYSCFG));
+    if !syscfg.mtrr_tom2_en() || !syscfg.tom2_force_mem_type_wb() {
         return None;
     }
 
-    let top_mem2 = hal.asm_read_msr64(MSR_AMD64_TOP_MEM2) & AMD64_TOP_MEM2_ADDRESS_MASK;
+    let top_mem2 = MsrAmd64TopMem2::from(hal.asm_read_msr64(MSR_AMD64_TOP_MEM2)).address();
     if top_mem2 <= BASE_4GB {
         return None;
     }

@@ -173,6 +173,7 @@ pub(crate) const SIZE_1MB: u32 = 0x000100000;
 pub(crate) const SIZE_64KB: u32 = 0x00010000;
 pub(crate) const SIZE_16KB: u32 = 0x00004000;
 pub(crate) const SIZE_4KB: u32 = 0x00001000;
+pub(crate) const BASE_4GB: u64 = 0x1_0000_0000;
 pub(crate) const OR_SEED: u64 = 0x0101010101010101;
 pub(crate) const CLEAR_SEED: u64 = 0xFFFFFFFFFFFFFFFF;
 pub(crate) const SCRATCH_BUFFER_SIZE: usize = 4 * SIZE_4KB as usize;
@@ -256,10 +257,58 @@ pub(crate) const BIT11: u64 = 0x800;
 pub(crate) const BIT7: u64 = 0x80;
 pub(crate) const CPUID_EXTENDED_FUNCTION: u32 = 0x80000000;
 pub(crate) const CPUID_SIGNATURE: u32 = 0;
+pub(crate) const CPUID_SIGNATURE_AUTHENTIC_AMD_EBX: u32 = u32::from_le_bytes(*b"Auth");
+pub(crate) const CPUID_SIGNATURE_AUTHENTIC_AMD_ECX: u32 = u32::from_le_bytes(*b"cAMD");
+pub(crate) const CPUID_SIGNATURE_AUTHENTIC_AMD_EDX: u32 = u32::from_le_bytes(*b"enti");
+pub(crate) const CPUID_SIGNATURE_GENUINE_INTEL_EBX: u32 = u32::from_le_bytes(*b"Genu");
+pub(crate) const CPUID_SIGNATURE_GENUINE_INTEL_ECX: u32 = u32::from_le_bytes(*b"ntel");
+pub(crate) const CPUID_SIGNATURE_GENUINE_INTEL_EDX: u32 = u32::from_le_bytes(*b"ineI");
 pub(crate) const CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS: u32 = 0x07;
 pub(crate) const CPUID_VERSION_INFO: u32 = 0x00000001;
 pub(crate) const CPUID_VIR_PHY_ADDRESS_SIZE: u32 = 0x80000008;
+pub(crate) const MSR_AMD64_SYSCFG: u32 = 0xC0010010;
+pub(crate) const MSR_AMD64_TOP_MEM2: u32 = 0xC001001D;
 pub(crate) const MSR_IA32_TME_ACTIVATE: u32 = 0x00000982;
+
+#[bitfield(u64)]
+pub(crate) struct MsrAmd64SysCfg {
+    #[bits(18)]
+    pub unused1: u32, // [Bits 17:0] Not used by this library.
+    #[bits(1)]
+    pub mtrr_fix_dram_en: bool, // [Bit 18] Fixed-range MTRR read/write attributes enable.
+    #[bits(1)]
+    pub mtrr_fix_dram_mod_en: bool, // [Bit 19] Fixed-range MTRR modification enable.
+    #[bits(1)]
+    pub mtrr_var_dram_en: bool, // [Bit 20] Variable-range MTRR read/write attributes enable.
+    #[bits(1)]
+    pub mtrr_tom2_en: bool, // [Bit 21] MTRR TOM2 Enable.
+    #[bits(1)]
+    pub tom2_force_mem_type_wb: bool, // [Bit 22] Force TOM2 memory type to write-back.
+    #[bits(1)]
+    pub mem_encrypt_en: bool, // [Bit 23] Memory encryption enable.
+    #[bits(1)]
+    pub snp_en: bool, // [Bit 24] Secure Nested Paging enable.
+    #[bits(1)]
+    pub snp_vmpl_en: bool, // [Bit 25] SNP VM privilege levels enable.
+    #[bits(38)]
+    pub unused2: u64, // [Bits 63:26] Not used by this library.
+}
+
+#[bitfield(u64)]
+pub(crate) struct MsrAmd64TopMem2 {
+    #[bits(23)]
+    pub reserved1: u32, // [Bits 22:0] Reserved.
+    #[bits(29)]
+    pub top_mem2: u32, // [Bits 51:23] Top of memory above 4 GiB.
+    #[bits(12)]
+    pub reserved2: u16, // [Bits 63:52] Reserved.
+}
+
+impl MsrAmd64TopMem2 {
+    pub(crate) fn address(&self) -> u64 {
+        u64::from(self.top_mem2()) << 23
+    }
+}
 
 #[bitfield(u64)]
 pub(crate) struct MsrIa32MtrrPhysbaseRegister {
@@ -516,4 +565,24 @@ pub(crate) struct MsrIa32TmeActivateRegister {
     /// Bitmask for BIOS to set which encryption algorithms are allowed for MKTME.
     #[bits(16)]
     pub mk_tme_crypto_algs: u16,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn amd64_syscfg_layout_matches_architecture() {
+        let syscfg = MsrAmd64SysCfg::default().with_mtrr_tom2_en(true).with_tom2_force_mem_type_wb(true);
+
+        assert_eq!(syscfg.into_bits(), (1 << 21) | (1 << 22));
+    }
+
+    #[test]
+    fn amd64_top_mem2_layout_matches_architecture() {
+        let top_mem2 = MsrAmd64TopMem2::default().with_top_mem2(0x400);
+
+        assert_eq!(top_mem2.into_bits(), 0x2_0000_0000);
+        assert_eq!(top_mem2.address(), 0x2_0000_0000);
+    }
 }
