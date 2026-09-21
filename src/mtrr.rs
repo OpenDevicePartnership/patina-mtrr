@@ -1349,6 +1349,41 @@ impl<H: Hal> MtrrLib<H> {
         Ok(())
     }
 
+    // Apply CPU vendor-specific MTRR overrides to the memory range array.
+    //
+    // - `ranges` -             Return the memory range array with vendor overrides applied.
+    // - `range_capacity` -     The capacity of the memory range array.
+    // - `range_count` -        Return the count of memory ranges.
+    // - `address_space_limit` - The exclusive upper bound of the address space.
+    fn mtrr_lib_apply_vendor_overrides(
+        &self,
+        ranges: &mut [MtrrMemoryRange],
+        range_capacity: usize,
+        range_count: &mut usize,
+        address_space_limit: u64,
+    ) -> MtrrResult<()> {
+        for range in self.vendor.mtrr_overrides(&self.hal) {
+            if range.base_address >= address_space_limit || range.length == 0 {
+                continue;
+            }
+
+            let length = core::cmp::min(range.length, address_space_limit - range.base_address);
+            match self.mtrr_lib_set_memory_type(
+                ranges,
+                range_capacity,
+                range_count,
+                range.base_address,
+                length,
+                range.mem_type,
+            ) {
+                Ok(()) | Err(MtrrError::AlreadyStarted) => {}
+                Err(error) => return Err(error),
+            }
+        }
+
+        Ok(())
+    }
+
     //  Return the memory type bit mask that's compatible to first type in the Ranges.
     //
     //  - `ranges` -      Memory range array holding the memory type
@@ -2090,25 +2125,12 @@ impl<H: Hal> MtrrLib<H> {
             }
         }
 
-        let address_space_limit = mtrr_valid_bits_mask + 1;
-        for range in self.vendor.mtrr_overrides(&self.hal) {
-            if range.base_address >= address_space_limit || range.length == 0 {
-                continue;
-            }
-
-            let length = core::cmp::min(range.length, address_space_limit - range.base_address);
-            match self.mtrr_lib_set_memory_type(
-                &mut all_ranges,
-                MTRR_NUMBER_OF_LOCAL_MTRR_RANGES,
-                &mut all_range_count,
-                range.base_address,
-                length,
-                range.mem_type,
-            ) {
-                Ok(()) | Err(MtrrError::AlreadyStarted) => {}
-                Err(error) => return Err(error),
-            }
-        }
+        self.mtrr_lib_apply_vendor_overrides(
+            &mut all_ranges,
+            MTRR_NUMBER_OF_LOCAL_MTRR_RANGES,
+            &mut all_range_count,
+            mtrr_valid_bits_mask + 1,
+        )?;
 
         Ok(MtrrRangeIter { ranges: all_ranges, index: 0, count: all_range_count })
     }
