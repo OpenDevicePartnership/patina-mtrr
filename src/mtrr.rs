@@ -25,6 +25,7 @@ use crate::{
         SCRATCH_BUFFER_SIZE, SIZE_1MB,
     },
     utils::{get_power_of_two_64, high_bit_set_64, is_pow2, lshift_u64, mult_u64x32, rshift_u64},
+    vendor::CpuVendor,
 };
 use core::{mem::size_of, ptr::write_bytes};
 
@@ -90,12 +91,14 @@ impl ExactSizeIterator for MtrrRangeIter {}
 
 pub struct MtrrLib<H: Hal = X64Hal> {
     hal: H,
+    vendor: CpuVendor,
     pcd_cpu_number_of_reserved_variable_mtrrs: u32,
 }
 
 impl<H: Hal> MtrrLib<H> {
     pub(crate) fn new(hal: H, pcd_cpu_number_of_reserved_variable_mtrrs: u32) -> Self {
-        Self { hal, pcd_cpu_number_of_reserved_variable_mtrrs }
+        let vendor = CpuVendor::detect(&hal);
+        Self { hal, vendor, pcd_cpu_number_of_reserved_variable_mtrrs }
     }
 
     //  Return whether MTRR is supported.
@@ -460,6 +463,10 @@ impl<H: Hal> MtrrLib<H> {
     //
     //  - `address` -            The specific address
     fn mtrr_get_memory_attribute_by_address_worker(&self, address: u64) -> MtrrMemoryCacheType {
+        if let Some(mem_type) = self.vendor.mtrr_override(&self.hal, address) {
+            return mem_type;
+        }
+
         let def_type = MsrIa32MtrrDefType::from(self.hal.asm_read_msr64(MSR_IA32_MTRR_DEF_TYPE));
 
         if !def_type.e() {
@@ -1342,6 +1349,41 @@ impl<H: Hal> MtrrLib<H> {
         Ok(())
     }
 
+    // Apply CPU vendor-specific MTRR overrides to the memory range array.
+    //
+    // - `ranges` -             Return the memory range array with vendor overrides applied.
+    // - `range_capacity` -     The capacity of the memory range array.
+    // - `range_count` -        Return the count of memory ranges.
+    // - `address_space_limit` - The exclusive upper bound of the address space.
+    fn mtrr_lib_apply_vendor_overrides(
+        &self,
+        ranges: &mut [MtrrMemoryRange],
+        range_capacity: usize,
+        range_count: &mut usize,
+        address_space_limit: u64,
+    ) -> MtrrResult<()> {
+        for range in self.vendor.mtrr_overrides(&self.hal) {
+            if range.base_address >= address_space_limit || range.length == 0 {
+                continue;
+            }
+
+            let length = core::cmp::min(range.length, address_space_limit - range.base_address);
+            match self.mtrr_lib_set_memory_type(
+                ranges,
+                range_capacity,
+                range_count,
+                range.base_address,
+                length,
+                range.mem_type,
+            ) {
+                Ok(()) | Err(MtrrError::AlreadyStarted) => {}
+                Err(error) => return Err(error),
+            }
+        }
+
+        Ok(())
+    }
+
     //  Return the memory type bit mask that's compatible to first type in the Ranges.
     //
     //  - `ranges` -      Memory range array holding the memory type
@@ -2083,6 +2125,13 @@ impl<H: Hal> MtrrLib<H> {
             }
         }
 
+        self.mtrr_lib_apply_vendor_overrides(
+            &mut all_ranges,
+            MTRR_NUMBER_OF_LOCAL_MTRR_RANGES,
+            &mut all_range_count,
+            mtrr_valid_bits_mask + 1,
+        )?;
+
         Ok(MtrrRangeIter { ranges: all_ranges, index: 0, count: all_range_count })
     }
 
@@ -2273,6 +2322,7 @@ impl<H: Hal> Mtrr for MtrrLib<H> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests::MockHal;
 
     // Regression test for `mtrr_lib_set_memory_type`'s "reserve space" tail shift. When a merge/
     // replace shrinks the working_ranges array (delta_count > 0) and the shifted tail overlaps its
@@ -2282,7 +2332,7 @@ mod tests {
     // semantics) must shift the tail intact instead.
     #[test]
     fn set_memory_type_shrink_does_not_corrupt_overlapping_tail() {
-        let mtrr_lib = MtrrLib::new(X64Hal::new(), 0);
+        let mtrr_lib = MtrrLib::new(MockHal::new(), 0);
 
         let mut working_ranges = [MtrrMemoryRange::default(); 8];
         working_ranges[0] = MtrrMemoryRange::new(0x0000, 0x1000, MtrrMemoryCacheType::Uncacheable);

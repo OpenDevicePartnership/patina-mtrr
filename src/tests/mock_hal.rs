@@ -9,15 +9,21 @@
 #![allow(unused_imports)]
 #![allow(clippy::needless_range_loop)]
 
+use core::cell::Cell;
+
 use crate::{
     hal::{CpuidResult, Hal},
     mtrr::MtrrLib,
     structs::{
-        CPUID_EXTENDED_FUNCTION, CPUID_SIGNATURE, CPUID_VERSION_INFO, CPUID_VIR_PHY_ADDRESS_SIZE,
-        CpuidStructuredExtendedFeatureFlagsEcx, CpuidVersionInfoEdx, CpuidVirPhyAddressSizeEax, MSR_IA32_MTRR_DEF_TYPE,
+        CPUID_EXTENDED_FUNCTION, CPUID_SIGNATURE, CPUID_SIGNATURE_AUTHENTIC_AMD_EBX, CPUID_SIGNATURE_AUTHENTIC_AMD_ECX,
+        CPUID_SIGNATURE_AUTHENTIC_AMD_EDX, CPUID_SIGNATURE_GENUINE_INTEL_EBX, CPUID_SIGNATURE_GENUINE_INTEL_ECX,
+        CPUID_SIGNATURE_GENUINE_INTEL_EDX, CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS, CPUID_VERSION_INFO,
+        CPUID_VIR_PHY_ADDRESS_SIZE, CpuidStructuredExtendedFeatureFlagsEcx, CpuidVersionInfoEdx,
+        CpuidVirPhyAddressSizeEax, MSR_AMD64_SYSCFG, MSR_AMD64_TOP_MEM2, MSR_IA32_MTRR_DEF_TYPE,
         MSR_IA32_MTRR_PHYSBASE0, MSR_IA32_MTRR_PHYSMASK0, MSR_IA32_MTRRCAP, MSR_IA32_TME_ACTIVATE,
-        MTRR_NUMBER_OF_FIXED_MTRR, MTRR_NUMBER_OF_VARIABLE_MTRR, MsrIa32MtrrDefType, MsrIa32MtrrPhysbaseRegister,
-        MsrIa32MtrrPhysmaskRegister, MsrIa32MtrrcapRegister, MsrIa32TmeActivateRegister, MtrrMemoryCacheType,
+        MTRR_NUMBER_OF_FIXED_MTRR, MTRR_NUMBER_OF_VARIABLE_MTRR, MsrAmd64SysCfg, MsrAmd64TopMem2, MsrIa32MtrrDefType,
+        MsrIa32MtrrPhysbaseRegister, MsrIa32MtrrPhysmaskRegister, MsrIa32MtrrcapRegister, MsrIa32TmeActivateRegister,
+        MtrrMemoryCacheType,
     },
     tests::config::{FIXED_MTRR_INDICES, MtrrLibSystemParameter},
 };
@@ -37,6 +43,12 @@ pub(crate) struct MockHal {
     cpuid_version_info_edx: CpuidVersionInfoEdx,
     cpuid_extended_feature_flags_ecx: CpuidStructuredExtendedFeatureFlagsEcx,
     cpuid_vir_phy_address_size_eax: CpuidVirPhyAddressSizeEax,
+    cpuid_vendor_ebx: u32,
+    cpuid_vendor_ecx: u32,
+    cpuid_vendor_edx: u32,
+    cpuid_signature_read_count: Cell<u32>,
+    amd64_syscfg_msr: MsrAmd64SysCfg,
+    amd64_top_mem2_msr: MsrAmd64TopMem2,
 
     // Mocked HAL functions state
     interrupt_state: bool,
@@ -57,6 +69,12 @@ impl MockHal {
             cpuid_version_info_edx: CpuidVersionInfoEdx::default(),
             cpuid_extended_feature_flags_ecx: CpuidStructuredExtendedFeatureFlagsEcx::default(),
             cpuid_vir_phy_address_size_eax: CpuidVirPhyAddressSizeEax::default(),
+            cpuid_vendor_ebx: 0,
+            cpuid_vendor_ecx: 0,
+            cpuid_vendor_edx: 0,
+            cpuid_signature_read_count: Cell::new(0),
+            amd64_syscfg_msr: MsrAmd64SysCfg::default(),
+            amd64_top_mem2_msr: MsrAmd64TopMem2::default(),
             interrupt_state: true,
             cr3: 0,
             cr4: 0,
@@ -111,6 +129,25 @@ impl MockHal {
             self.tme_activate_msr.set_tme_enable(false);
             self.tme_activate_msr.set_mk_tme_keyid_bits(0);
         }
+    }
+
+    pub(crate) fn configure_amd_top_mem2(&mut self, top_mem2: u64, enabled: bool, force_write_back: bool) {
+        self.cpuid_vendor_ebx = CPUID_SIGNATURE_AUTHENTIC_AMD_EBX;
+        self.cpuid_vendor_ecx = CPUID_SIGNATURE_AUTHENTIC_AMD_ECX;
+        self.cpuid_vendor_edx = CPUID_SIGNATURE_AUTHENTIC_AMD_EDX;
+        self.amd64_syscfg_msr =
+            MsrAmd64SysCfg::default().with_mtrr_tom2_en(enabled).with_tom2_force_mem_type_wb(force_write_back);
+        self.amd64_top_mem2_msr = MsrAmd64TopMem2::default().with_top_mem2((top_mem2 >> 23) as u32);
+    }
+
+    pub(crate) fn configure_intel_cpu(&mut self) {
+        self.cpuid_vendor_ebx = CPUID_SIGNATURE_GENUINE_INTEL_EBX;
+        self.cpuid_vendor_ecx = CPUID_SIGNATURE_GENUINE_INTEL_ECX;
+        self.cpuid_vendor_edx = CPUID_SIGNATURE_GENUINE_INTEL_EDX;
+    }
+
+    pub(crate) fn cpuid_signature_read_count(&self) -> u32 {
+        self.cpuid_signature_read_count.get()
     }
 }
 
@@ -195,6 +232,8 @@ impl Hal for MockHal {
 
         // 3. Check MSRs
         match msr_index {
+            MSR_AMD64_SYSCFG => self.amd64_syscfg_msr.into_bits(),
+            MSR_AMD64_TOP_MEM2 => self.amd64_top_mem2_msr.into_bits(),
             MSR_IA32_MTRR_DEF_TYPE => self.def_type_msr.into(),
             MSR_IA32_MTRRCAP => self.mtrr_cap_msr.into_bits() as u64,
             MSR_IA32_TME_ACTIVATE => self.tme_activate_msr.into(),
@@ -238,6 +277,8 @@ impl Hal for MockHal {
             MSR_IA32_MTRRCAP => {
                 self.mtrr_cap_msr = MsrIa32MtrrcapRegister::from_bits((value & 0xFFFF_FFFF) as u32);
             }
+            MSR_AMD64_SYSCFG => self.amd64_syscfg_msr = MsrAmd64SysCfg::from(value),
+            MSR_AMD64_TOP_MEM2 => self.amd64_top_mem2_msr = MsrAmd64TopMem2::from(value),
             _ => unreachable!("Unsupported MSR index: 0x{:x}", msr_index),
         }
     }
@@ -254,12 +295,15 @@ impl Hal for MockHal {
     }
 
     fn asm_cpuid_ex(&self, function: u32, _sub_function: u32) -> CpuidResult {
-        const CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS: u32 = 0x07;
         let mut result = CpuidResult { eax: 0, ebx: 0, ecx: 0, edx: 0 };
 
         match function {
             CPUID_SIGNATURE => {
+                self.cpuid_signature_read_count.set(self.cpuid_signature_read_count.get() + 1);
                 result.eax = CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS;
+                result.ebx = self.cpuid_vendor_ebx;
+                result.ecx = self.cpuid_vendor_ecx;
+                result.edx = self.cpuid_vendor_edx;
                 result
             }
             CPUID_VERSION_INFO => {
