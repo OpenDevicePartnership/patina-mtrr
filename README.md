@@ -32,7 +32,7 @@ pub fn get_all_mtrrs(&self) -> MtrrSettings;
 
 pub fn set_all_mtrrs(&mut self, mtrr_setting: &MtrrSettings);
 
-pub fn get_memory_attribute(&self, address: u64) -> MtrrMemoryCacheType;
+pub fn get_memory_attribute(&self, address: u64) -> MtrrResult<MtrrMemoryCacheType>;
 
 pub fn set_memory_attribute(
     &mut self,
