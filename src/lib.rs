@@ -23,7 +23,7 @@
 //!
 //!     pub fn set_all_mtrrs(&mut self, mtrr_setting: &MtrrSettings);
 //!
-//!     pub fn get_memory_attribute(&self, address: u64) -> MtrrMemoryCacheType;
+//!     pub fn get_memory_attribute(&self, address: u64) -> MtrrResult<MtrrMemoryCacheType>;
 //!
 //!     pub fn set_memory_attribute(
 //!         &mut self,
@@ -141,7 +141,7 @@ cfg_if::cfg_if! {
             fn is_supported(&self) -> bool;
             fn get_all_mtrrs(&self) -> MtrrResult<structs::MtrrSettings>;
             fn set_all_mtrrs(&mut self, mtrr_setting: &structs::MtrrSettings);
-            fn get_memory_attribute(&self, address: u64) -> structs::MtrrMemoryCacheType;
+            fn get_memory_attribute(&self, address: u64) -> MtrrResult<structs::MtrrMemoryCacheType>;
             fn set_memory_attribute(
                 &mut self,
                 base_address: u64,

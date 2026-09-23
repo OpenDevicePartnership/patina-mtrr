@@ -528,12 +528,9 @@ impl<H: Hal> MtrrLib<H> {
     /// This function is mainly for debug purpose.
     ///
     /// - `address` -  The specific address
-    pub fn get_memory_attribute_impl(&self, address: u64) -> MtrrMemoryCacheType {
-        if !self.is_supported_impl() {
-            return MtrrMemoryCacheType::Uncacheable;
-        }
-
-        self.mtrr_get_memory_attribute_by_address_worker(address)
+    pub fn get_memory_attribute_impl(&self, address: u64) -> MtrrResult<MtrrMemoryCacheType> {
+        self.mtrr_lib_is_mtrr_supported_internal()?;
+        Ok(self.mtrr_get_memory_attribute_by_address_worker(address))
     }
 
     //  Update the Ranges array to change the specified range identified by
@@ -2309,7 +2306,7 @@ impl<H: Hal> Mtrr for MtrrLib<H> {
         self.get_memory_ranges_impl()
     }
 
-    fn get_memory_attribute(&self, address: u64) -> crate::structs::MtrrMemoryCacheType {
+    fn get_memory_attribute(&self, address: u64) -> MtrrResult<crate::structs::MtrrMemoryCacheType> {
         self.get_memory_attribute_impl(address)
     }
 
