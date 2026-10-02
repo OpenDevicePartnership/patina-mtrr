@@ -34,7 +34,7 @@ pub struct VariableMtrr {
 
 // Structure to hold base and mask pair for variable MTRR register
 #[repr(C)]
-#[derive(Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MtrrVariableSetting {
     pub base: u64,
     pub mask: u64,
@@ -42,14 +42,14 @@ pub struct MtrrVariableSetting {
 
 // Array for variable MTRRs
 #[repr(C)]
-#[derive(Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MtrrVariableSettings {
     pub mtrr: [MtrrVariableSetting; MTRR_NUMBER_OF_VARIABLE_MTRR],
 }
 
 // Array for fixed MTRRs
 #[repr(C)]
-#[derive(Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MtrrFixedSettings {
     pub mtrr: [u64; MTRR_NUMBER_OF_FIXED_MTRR],
 }
@@ -73,7 +73,7 @@ pub struct MsrIa32MtrrDefType {
 
 // Structure to hold all MTRRs
 #[repr(C)]
-#[derive(Default, PartialEq, Eq)]
+#[derive(Default, Clone, PartialEq, Eq)]
 pub struct MtrrSettings {
     pub fixed: MtrrFixedSettings,
     pub variables: MtrrVariableSettings,
