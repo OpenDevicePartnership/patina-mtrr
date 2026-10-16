@@ -103,9 +103,7 @@ impl MockHal {
     /// mock_hal.initialize_mtrr_regs(&params);
     /// ```
     pub(crate) fn initialize_mtrr_regs(&mut self, system_parameter: &MtrrLibSystemParameter) {
-        for value in &mut self.fixed_mtrrs_value {
-            *value = system_parameter.default_cache_type as u64;
-        }
+        self.fixed_mtrrs_value.fill(system_parameter.default_cache_type as u64);
 
         for i in 0..MTRR_NUMBER_OF_VARIABLE_MTRR {
             self.variable_mtrrs_phys_base[i] = MsrIa32MtrrPhysbaseRegister::default();
